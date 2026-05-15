@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PBB Kit Setup</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">PBB</div>
+          <div>
+            <h1>Kit Setup</h1>
+            <p>Node installer</p>
+          </div>
+        </div>
+        <nav class="stage-nav" id="stageNav" aria-label="Setup stages"></nav>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Current Stage</p>
+            <h2 id="stageTitle">Setup Readiness</h2>
+          </div>
+          <div class="actions">
+            <button class="secondary" id="chooseConfigButton" type="button">Config</button>
+            <button class="primary" id="refreshButton" type="button">Run Checks</button>
+          </div>
+        </header>
+
+        <section class="config-panel" aria-label="Runtime inputs">
+          <label>
+            <span>PHP</span>
+            <input id="phpPathInput" type="text" spellcheck="false">
+          </label>
+          <label>
+            <span>Config</span>
+            <input id="configPathInput" type="text" spellcheck="false">
+          </label>
+        </section>
+
+        <section class="setup-form" aria-label="Setup inputs">
+          <div class="stage-panels">
+            <fieldset data-stage-panel="1">
+              <legend>Platform Check</legend>
+              <p class="panel-copy">Verify PHP, Apache, MySQL/MariaDB, ffmpeg, ffprobe, services, and writable paths before continuing.</p>
+            </fieldset>
+
+            <fieldset data-stage-panel="2">
+              <legend>Hub Pairing</legend>
+              <label>
+                <span>Hub ID</span>
+                <input id="hubIdInput" type="number" min="1" value="11">
+              </label>
+              <label>
+                <span>Hub Token</span>
+                <input id="hubTokenInput" type="password" autocomplete="off">
+              </label>
+            </fieldset>
+
+            <fieldset class="apps-fieldset" data-stage-panel="3">
+              <legend>Apps On This Machine</legend>
+              <div class="app-scope-grid" id="appScopeGrid"></div>
+            </fieldset>
+
+            <fieldset data-stage-panel="4">
+              <legend>Base Path</legend>
+              <div class="inline-field">
+                <label>
+                  <span>Install Base</span>
+                  <input id="basePathInput" type="text" spellcheck="false">
+                </label>
+                <button class="icon-button" id="basePathButton" type="button">...</button>
+              </div>
+            </fieldset>
+
+            <fieldset data-stage-panel="5">
+              <legend>Trusted Packages</legend>
+              <p class="panel-copy">Kit Setup verifies bundled or official signed app packages before any app installer runs.</p>
+            </fieldset>
+
+            <fieldset data-stage-panel="6">
+              <legend>DNS</legend>
+              <label>
+                <span>Machine IP</span>
+                <input id="machineIpInput" type="text" value="127.0.0.1" spellcheck="false">
+              </label>
+              <label>
+                <span>Technitium URL</span>
+                <input id="technitiumBaseUrlInput" type="text" value="http://localhost:5380" spellcheck="false">
+              </label>
+              <label>
+                <span>Zone</span>
+                <input id="dnsZoneInput" type="text" value="pbb.ph" spellcheck="false">
+              </label>
+              <label>
+                <span>Technitium Token</span>
+                <input id="technitiumTokenInput" type="password" autocomplete="off">
+              </label>
+              <label class="check-row">
+                <input id="applyDnsInput" type="checkbox">
+                <span>Apply DNS records</span>
+              </label>
+            </fieldset>
+
+            <fieldset data-stage-panel="7">
+              <legend>SSL & Apache</legend>
+              <div class="inline-field">
+                <label>
+                  <span>Certificate Folder</span>
+                  <input id="certRootInput" type="text" spellcheck="false">
+                </label>
+                <button class="icon-button" id="certRootButton" type="button">...</button>
+              </div>
+              <div class="inline-field">
+                <label>
+                  <span>PEM Bundle</span>
+                  <input id="pemUploadPathInput" type="text" spellcheck="false">
+                </label>
+                <button class="icon-button" id="pemUploadButton" type="button">...</button>
+              </div>
+              <label>
+                <span>Apache Include</span>
+                <input id="apacheIncludeOutputInput" type="text" spellcheck="false">
+              </label>
+              <label class="check-row">
+                <input id="writeExtractedFilesInput" type="checkbox">
+                <span>Write extracted cert files</span>
+              </label>
+              <label class="check-row">
+                <input id="applyWebServerInput" type="checkbox">
+                <span>Apply Apache include</span>
+              </label>
+            </fieldset>
+
+            <fieldset data-stage-panel="8">
+              <legend>Remote Dependencies</legend>
+              <p class="panel-copy">Apps marked Remote are checked through DNS and HTTP health endpoints before local installation continues.</p>
+            </fieldset>
+
+            <fieldset data-stage-panel="9">
+              <legend>Admin Account</legend>
+              <label>
+                <span>Admin Email</span>
+                <input type="text" value="admin@pbb.local" disabled>
+              </label>
+              <label>
+                <span>Admin Name</span>
+                <input type="text" value="PBB Administrator" disabled>
+              </label>
+              <label>
+                <span>Admin Password</span>
+                <input id="adminPasswordInput" type="password" autocomplete="new-password">
+              </label>
+            </fieldset>
+
+            <fieldset data-stage-panel="10">
+              <legend>Installation Plan</legend>
+              <p class="panel-copy">Review the generated plan before package deployment, DNS writes, SSL writes, install, or population actions run.</p>
+            </fieldset>
+
+            <fieldset data-stage-panel="11">
+              <legend>Stage-By-Stage Install</legend>
+              <p class="panel-copy">Install and population actions are guarded. Confirm each mutating action before it runs.</p>
+            </fieldset>
+
+            <fieldset data-stage-panel="12">
+              <legend>Finish</legend>
+              <p class="panel-copy">Final app links, reports, service state, DNS, certificate, and follow-up items appear here after installation.</p>
+            </fieldset>
+          </div>
+
+          <div class="form-actions">
+            <button class="secondary" id="buildConfigButton" type="button">Build Runtime Config</button>
+            <span id="configBuildStatus"></span>
+          </div>
+        </section>
+
+        <section class="summary-band" id="summaryBand" aria-live="polite">
+          <div>
+            <span class="metric-label">Status</span>
+            <strong id="overallStatus">Not run</strong>
+          </div>
+          <div>
+            <span class="metric-label">Success</span>
+            <strong id="successCount">0</strong>
+          </div>
+          <div>
+            <span class="metric-label">Warnings</span>
+            <strong id="warningCount">0</strong>
+          </div>
+          <div>
+            <span class="metric-label">Pending</span>
+            <strong id="pendingCount">0</strong>
+          </div>
+        </section>
+
+        <section class="resume-panel" aria-label="Resume checkpoints">
+          <div class="resume-header">
+            <span>Resume Checkpoints</span>
+            <span id="checkpointPath"></span>
+          </div>
+          <div class="checkpoint-grid" id="checkpointGrid"></div>
+        </section>
+
+        <section class="app-retry-panel" aria-label="Per-app retry">
+          <div class="resume-header">
+            <span>Per-App Retry</span>
+            <span>Use after preflight, install, or populate reports</span>
+          </div>
+          <div class="app-retry-grid" id="appRetryGrid"></div>
+        </section>
+
+        <section class="finish-panel" aria-label="Finish summary">
+          <div class="resume-header">
+            <span>Finish Summary</span>
+            <span id="finishStatus">Not generated</span>
+          </div>
+          <div class="finish-content" id="finishContent"></div>
+        </section>
+
+        <section class="stage-detail">
+          <div class="detail-header">
+            <div>
+              <p class="eyebrow" id="detailStep">Step</p>
+              <h3 id="detailName">Run checks to load stage details</h3>
+            </div>
+            <span class="status-pill neutral" id="detailStatus">idle</span>
+          </div>
+          <p id="detailMessage" class="detail-message"></p>
+          <pre id="detailJson" class="detail-json">{}</pre>
+        </section>
+
+        <section class="command-panel" aria-label="Actions">
+          <button data-action="detect" type="button">Platform</button>
+          <button data-action="hub-resolve" type="button">Hub</button>
+          <button data-action="stage-report" type="button">Stages</button>
+          <button data-action="plan" type="button">Plan</button>
+          <button data-action="prepare-packages" type="button">Packages</button>
+          <button data-action="dns-plan" type="button">DNS</button>
+          <button data-action="dns-verify" type="button">Verify DNS</button>
+          <button data-action="ssl-plan" type="button">SSL</button>
+          <button data-action="remote-check" type="button">Remote</button>
+          <button data-action="preflight" type="button">Preflight</button>
+          <button data-action="install" type="button">Install</button>
+          <button data-action="populate" type="button">Populate</button>
+          <button data-action="smoke-check" type="button">Smoke</button>
+          <button data-action="finish-report" type="button">Finish</button>
+        </section>
+
+        <section class="log-panel">
+          <div class="log-header">
+            <span>Runner Output</span>
+            <span id="reportPath"></span>
+          </div>
+          <pre id="runnerOutput"></pre>
+        </section>
+      </section>
+    </main>
+
+    <div class="modal-backdrop" id="confirmModal" hidden>
+      <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Confirmation Required</p>
+            <h3 id="confirmTitle">Confirm Action</h3>
+          </div>
+          <span class="status-pill warning" id="confirmRisk">guarded</span>
+        </div>
+        <p id="confirmSummary" class="confirm-summary"></p>
+        <ul id="confirmDetails" class="confirm-details"></ul>
+        <label class="confirm-check">
+          <input id="confirmCheckbox" type="checkbox">
+          <span>I understand this action and want to continue.</span>
+        </label>
+        <div class="modal-actions">
+          <button class="secondary" id="confirmCancelButton" type="button">Cancel</button>
+          <button class="primary" id="confirmRunButton" type="button" disabled>Run Action</button>
+        </div>
+      </section>
+    </div>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

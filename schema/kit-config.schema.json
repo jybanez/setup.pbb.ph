@@ -17,6 +17,21 @@
           "type": "string",
           "minLength": 1
         },
+        "hub_record_id": {
+          "type": "integer"
+        },
+        "node_name": {
+          "type": "string"
+        },
+        "deployment": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "location_codes": {
+          "type": "object"
+        },
         "timezone": {
           "type": "string",
           "minLength": 1
@@ -31,6 +46,268 @@
         },
         "operator": {
           "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "hub": {
+      "type": "object",
+      "properties": {
+        "base_url": {
+          "type": "string",
+          "default": "https://hub.pbb.ph"
+        },
+        "hub_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "token": {
+          "type": "string"
+        },
+        "token_env": {
+          "type": "string"
+        },
+        "auto_resolve": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowed_statuses": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["planned", "provisioning", "active", "inactive", "maintenance", "retired"]
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "platform": {
+      "type": "object",
+      "properties": {
+        "os": {
+          "type": "string",
+          "enum": ["windows", "linux", "auto"]
+        },
+        "web_server": {
+          "type": "string",
+          "enum": ["apache", "nginx", "none", "auto"]
+        },
+        "stack": {
+          "type": "string"
+        },
+        "required_php_extensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "apache_binary": {
+          "type": "string"
+        },
+        "mysql_binary": {
+          "type": "string"
+        },
+        "ffmpeg_binary": {
+          "type": "string"
+        },
+        "ffprobe_binary": {
+          "type": "string"
+        },
+        "service_names": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "port_checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "expect": {
+                "type": "string",
+                "enum": ["open", "available"]
+              }
+            },
+            "required": ["name", "port"],
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "machine": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ip_address": {
+          "type": "string"
+        },
+        "selected_apps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "paths": {
+      "type": "object",
+      "properties": {
+        "apps_base": {
+          "type": "string"
+        },
+        "cert_root": {
+          "type": "string"
+        },
+        "apache_include_output": {
+          "type": "string"
+        },
+        "package_cache": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "layout": {
+      "type": "object",
+      "properties": {
+        "base_path": {
+          "type": "string"
+        },
+        "apps": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "packages": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": ["bundled", "official-release-source"]
+        },
+        "base_path": {
+          "type": "string"
+        },
+        "manifest_path": {
+          "type": "string"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "signature_policy": {
+          "type": "string",
+          "enum": ["required", "warn", "disabled"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "domains": {
+      "type": "object",
+      "properties": {
+        "zone": {
+          "type": "string"
+        },
+        "mapserver": {
+          "type": "string"
+        },
+        "maestro": {
+          "type": "string"
+        },
+        "relay": {
+          "type": "string"
+        },
+        "relay_alias": {
+          "type": "string"
+        },
+        "realtime": {
+          "type": "string"
+        },
+        "hotline": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "dns": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["technitium", "manual", "none"]
+        },
+        "base_url": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        },
+        "token_env": {
+          "type": "string"
+        },
+        "zone": {
+          "type": "string"
+        },
+        "ttl": {
+          "type": "integer"
+        },
+        "update_mode": {
+          "type": "string",
+          "enum": ["apply", "plan-only", "manual"]
+        },
+        "verification_mode": {
+          "type": "string",
+          "enum": ["system", "nslookup"]
+        },
+        "verify_nameserver": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "ssl": {
+      "type": "object",
+      "properties": {
+        "certificate_root": {
+          "type": "string"
+        },
+        "certificate_file": {
+          "type": "string"
+        },
+        "private_key_file": {
+          "type": "string"
+        },
+        "chain_file": {
+          "type": "string"
+        },
+        "pem_upload_path": {
+          "type": "string"
+        },
+        "write_extracted_files": {
+          "type": "boolean"
+        },
+        "web_server_update_mode": {
+          "type": "string",
+          "enum": ["apply", "plan-only", "manual"]
+        },
+        "private_key_required": {
+          "type": "boolean"
         }
       },
       "additionalProperties": true
@@ -67,7 +344,20 @@
           "type": "object"
         },
         "secrets": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "policy": {
+              "type": "string",
+              "enum": ["kit-provided", "app-generated", "external"]
+            },
+            "values": {
+              "type": "object"
+            },
+            "generated_at": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
         },
         "admin": {
           "type": "object",
@@ -85,6 +375,9 @@
             "password": {
               "type": "string"
             },
+            "password_env": {
+              "type": "string"
+            },
             "must_change_password": {
               "type": "boolean"
             },
@@ -93,6 +386,9 @@
             }
           },
           "additionalProperties": true
+        },
+        "hub": {
+          "type": "object"
         }
       },
       "additionalProperties": true
@@ -110,6 +406,10 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "install_scope": {
+            "type": "string",
+            "enum": ["local", "remote", "disabled"]
           },
           "release_path": {
             "type": "string",
@@ -129,6 +429,30 @@
           "app_url": {
             "type": "string",
             "minLength": 1
+          },
+          "session_domain": {
+            "type": "string"
+          },
+          "force_https": {
+            "type": "boolean"
+          },
+          "remote": {
+            "type": "object",
+            "properties": {
+              "health_url": {
+                "type": "string"
+              },
+              "expected_http_statuses": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "timeout_seconds": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true
           },
           "depends_on": {
             "type": "array",

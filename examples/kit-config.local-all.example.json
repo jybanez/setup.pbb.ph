@@ -2,10 +2,116 @@
   "schema_version": 1,
   "kit": {
     "node_id": "local-dev-node",
+    "hub_record_id": 11,
+    "node_name": "CEBU CITY, CEBU",
     "timezone": "Asia/Manila",
     "install_root": "C:\\wamp64\\www\\pbb",
     "run_root": "C:\\wamp64\\www\\pbb\\kit-setup\\storage\\runs",
     "operator": "kit-setup-local"
+  },
+  "hub": {
+    "base_url": "https://hub.pbb.ph",
+    "hub_id": 11,
+    "token_env": "PBB_HUB_TOKEN",
+    "auto_resolve": false,
+    "allowed_statuses": ["planned", "provisioning", "active"]
+  },
+  "platform": {
+    "os": "windows",
+    "web_server": "apache",
+    "stack": "wamp",
+    "required_php_extensions": ["curl", "json", "openssl", "pdo", "mbstring"],
+    "apache_binary": "C:\\wamp64\\bin\\apache\\apache2.4.58\\bin\\httpd.exe",
+    "mysql_binary": "C:\\wamp64\\bin\\mariadb\\mariadb11.2.2\\bin\\mysql.exe",
+    "ffmpeg_binary": "C:\\Program Files\\Jellyfin\\Server\\ffmpeg.exe",
+    "ffprobe_binary": "C:\\Program Files\\Jellyfin\\Server\\ffprobe.exe",
+    "service_names": {
+      "apache": "wampapache64",
+      "mysql": "wampmariadb64"
+    },
+    "port_checks": [
+      {
+        "name": "http",
+        "host": "127.0.0.1",
+        "port": 80,
+        "expect": "open"
+      },
+      {
+        "name": "https",
+        "host": "127.0.0.1",
+        "port": 443,
+        "expect": "open"
+      },
+      {
+        "name": "mysql",
+        "host": "127.0.0.1",
+        "port": 3306,
+        "expect": "open"
+      },
+      {
+        "name": "realtime_ws",
+        "host": "127.0.0.1",
+        "port": 8080,
+        "expect": "available"
+      }
+    ]
+  },
+  "machine": {
+    "id": "local-dev-node",
+    "ip_address": "127.0.0.1",
+    "selected_apps": ["pbb-mapserver", "pbb-maestro", "pbb-realtime", "pbb-relay", "pbb-hotline"]
+  },
+  "paths": {
+    "apps_base": "C:\\wamp64\\www\\pbb-node",
+    "cert_root": "C:\\wamp64\\certs\\pbb.ph",
+    "apache_include_output": "C:\\wamp64\\apache-vhosts\\pbb-vhosts.conf",
+    "package_cache": "C:\\wamp64\\www\\pbb\\kit-setup\\packages"
+  },
+  "layout": {
+    "base_path": "C:\\wamp64\\www\\pbb-node",
+    "apps": {
+      "pbb-mapserver": "mapserver",
+      "pbb-maestro": "maestro",
+      "pbb-realtime": "realtime",
+      "pbb-relay": "relay",
+      "pbb-hotline": "hotline"
+    }
+  },
+  "packages": {
+    "source": "bundled",
+    "base_path": "C:\\wamp64\\www\\pbb\\kit-setup\\packages",
+    "manifest_path": "C:\\wamp64\\www\\pbb\\kit-setup\\packages\\packages.local.example.json",
+    "dry_run": true,
+    "signature_policy": "warn"
+  },
+  "domains": {
+    "zone": "pbb.ph",
+    "mapserver": "https://mapserver.pbb.ph",
+    "maestro": "https://maestro.pbb.ph",
+    "relay": "https://relay.pbb.ph",
+    "relay_alias": "https://cebu-cebu-relay.pbb.ph",
+    "realtime": "https://realtime.pbb.ph",
+    "hotline": "https://hotline.pbb.ph"
+  },
+  "dns": {
+    "provider": "technitium",
+    "base_url": "http://localhost:5380",
+    "token_env": "PBB_TECHNITIUM_TOKEN",
+    "zone": "pbb.ph",
+    "ttl": 300,
+    "update_mode": "plan-only",
+    "verification_mode": "system",
+    "verify_nameserver": ""
+  },
+  "ssl": {
+    "certificate_root": "C:\\wamp64\\certs\\pbb.ph",
+    "certificate_file": "C:\\wamp64\\certs\\pbb.ph\\pbb.ph.crt",
+    "private_key_file": "C:\\wamp64\\certs\\pbb.ph\\pbb.ph.key",
+    "chain_file": "C:\\wamp64\\certs\\pbb.ph\\pbb.ph.fullchain.crt",
+    "pem_upload_path": "",
+    "write_extracted_files": false,
+    "web_server_update_mode": "plan-only",
+    "private_key_required": true
   },
   "runtime": {
     "php_binary": "C:\\wamp64\\bin\\php\\php8.2.29\\php.exe",
@@ -17,7 +123,7 @@
       "strategy": "create_if_missing",
       "name": "PBB Administrator",
       "email": "admin@pbb.local",
-      "password": "REPLACE_WITH_STRONG_PASSWORD_BEFORE_RUNNING",
+      "password_env": "PBB_FIRST_ADMIN_PASSWORD",
       "must_change_password": false,
       "overwrite_existing": false
     },
@@ -49,8 +155,12 @@
       "policy": "kit-provided",
       "values": {
         "mapserver_purge_token": "REPLACE_WITH_MAPSERVER_PURGE_TOKEN",
+        "maestro_telemetry_token": "REPLACE_WITH_MAESTRO_TELEMETRY_TOKEN",
+        "realtime_token_secret": "REPLACE_WITH_REALTIME_TOKEN_SECRET",
         "realtime_backend_ingress_secret": "REPLACE_WITH_REALTIME_BACKEND_SECRET",
-        "relay_shared_secret": "REPLACE_WITH_RELAY_SHARED_SECRET"
+        "realtime_media_ingest_secret": "REPLACE_WITH_REALTIME_MEDIA_INGEST_SECRET",
+        "relay_shared_secret": "REPLACE_WITH_RELAY_SHARED_SECRET",
+        "hotline_media_assembly_token": "REPLACE_WITH_HOTLINE_MEDIA_ASSEMBLY_TOKEN"
       }
     }
   },
@@ -58,6 +168,7 @@
     {
       "id": "pbb-mapserver",
       "enabled": true,
+      "install_scope": "local",
       "release_path": "C:\\wamp64\\www\\mapserver",
       "mode": "repair",
       "install_path": "C:\\wamp64\\www\\mapserver",
@@ -76,7 +187,7 @@
           "poi_base_url": "https://poi.example.test/{z}/{x}/{y}.pbf",
           "curl_ssl_verify": true,
           "populate": {
-            "enabled": false,
+            "enabled": true,
             "center": "10.3157,123.8854",
             "radius_km": 1,
             "zooms": "12-14",
@@ -90,6 +201,7 @@
     {
       "id": "pbb-maestro",
       "enabled": true,
+      "install_scope": "local",
       "release_path": "C:\\wamp64\\www\\pbb\\maestro",
       "mode": "repair",
       "install_path": "C:\\wamp64\\www\\pbb\\maestro",
@@ -112,7 +224,7 @@
           "telemetry_token_header": "X-Telemetry-Token",
           "telemetry_trace": false,
           "populate": {
-            "enabled": false,
+            "enabled": true,
             "applications": [
               {
                 "app_code": "relay",
@@ -141,6 +253,7 @@
     {
       "id": "pbb-realtime",
       "enabled": true,
+      "install_scope": "local",
       "release_path": "C:\\wamp64\\www\\pbb\\realtime",
       "mode": "repair",
       "install_path": "C:\\wamp64\\www\\pbb\\realtime",
@@ -166,7 +279,7 @@
           "ws_port": 8080,
           "allowed_origins": ["http://localhost"],
           "populate": {
-            "enabled": false,
+            "enabled": true,
             "options": {
               "overwrite_secrets": false,
               "dry_run": true
@@ -179,6 +292,7 @@
     {
       "id": "pbb-relay",
       "enabled": true,
+      "install_scope": "local",
       "release_path": "C:\\wamp64\\www\\pbb\\relay",
       "mode": "repair",
       "install_path": "C:\\wamp64\\www\\pbb\\relay",
@@ -205,11 +319,13 @@
     {
       "id": "pbb-hotline",
       "enabled": true,
+      "install_scope": "local",
       "release_path": "C:\\wamp64\\www\\pbb\\hotline",
       "mode": "repair",
       "install_path": "C:\\wamp64\\www\\pbb\\hotline",
       "public_path": "C:\\wamp64\\www\\pbb\\hotline\\public",
       "app_url": "http://localhost/pbb/hotline/public",
+      "session_domain": "localhost",
       "depends_on": ["pbb-realtime", "pbb-mapserver", "pbb-relay", "pbb-maestro"],
       "database": {
         "driver": "mysql",
@@ -221,6 +337,7 @@
       },
       "config": {
         "hotline": {
+          "normal_session_lifetime": 15,
           "citizen_session_lifetime": 43200,
           "media_assembly_token": "REPLACE_WITH_HOTLINE_MEDIA_ASSEMBLY_TOKEN",
           "ffmpeg_binary": "C:\\Program Files\\Jellyfin\\Server\\ffmpeg.exe",
@@ -240,7 +357,7 @@
           "map_server_url": "http://localhost/mapserver",
           "sitrep_enabled": true,
           "populate": {
-            "enabled": false,
+            "enabled": true,
             "sources": {},
             "options": {
               "overwrite_existing": false,

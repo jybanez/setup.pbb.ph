@@ -8,6 +8,11 @@ The intent is not to replace each app's own installer. Each PBB app should ship 
 
 Start here:
 
+- [Non-Technical Install Flow](docs/non-technical-install-flow.md)
+- [Implementation Decisions](docs/implementation-decisions.md)
+- [Desktop Installer Shell](docs/desktop-installer-shell.md)
+- [Implementation Checklist](docs/implementation-checklist.md)
+- [External Machine Dry Run](docs/external-machine-dry-run.md)
 - [Installer Coordination Standards](docs/installer-coordination-standards.md)
 - [App Installer Template](docs/app-installer-template.md)
 - [Installer Readiness Checklist](docs/installer-readiness-checklist.md)

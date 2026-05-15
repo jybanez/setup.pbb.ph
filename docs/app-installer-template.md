@@ -224,6 +224,7 @@ Standard first admin identity:
     "name": "PBB Administrator",
     "email": "admin@pbb.local",
     "password": "provided-once-in-kit-setup",
+    "password_env": "PBB_FIRST_ADMIN_PASSWORD",
     "must_change_password": false,
     "overwrite_existing": false
   }
@@ -235,6 +236,7 @@ Rules:
 - `name` should default to `PBB Administrator`.
 - `email` should default to `admin@pbb.local`.
 - `password` is provided once in Kit Setup, then passed to each app installer through its unattended config.
+- Kit Setup examples may use `password_env` so local harness runs can inject the password without storing it in the config file.
 - Installers must reject blank, placeholder, or weak first-admin passwords.
 - Installers must create the admin only when missing unless `overwrite_existing` is explicitly true.
 - Installers must not print or persist the raw password in reports, manifests, logs, or status output.
@@ -830,7 +832,11 @@ Expected app-specific config:
 
 ```json
 {
+  "app": {
+    "session_domain": "hotline.pbb.ph"
+  },
   "hotline": {
+    "normal_session_lifetime": 15,
     "citizen_session_lifetime": 43200,
     "ffmpeg_binary": "C:\\pbb\\bin\\ffmpeg\\ffmpeg.exe",
     "ffprobe_binary": "C:\\pbb\\bin\\ffmpeg\\ffprobe.exe",

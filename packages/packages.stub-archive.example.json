@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "generated_for": "stub archive extraction harness",
+  "packages": [
+    {
+      "app_id": "pbb-stub",
+      "version": "0.1.0",
+      "source_type": "zip",
+      "path": "C:\\wamp64\\www\\pbb\\kit-setup\\storage\\package-fixtures\\pbb-stub.zip",
+      "sha256": "1bc5f0efbca228832e881f1e35112258cc6d431616294aabf6d1973e3ba2220d",
+      "trusted": true,
+      "signature_algorithm": "openssl-sha256",
+      "signature_path": "C:\\wamp64\\www\\pbb\\kit-setup\\fixtures\\package-signing\\pbb-stub.zip.sig",
+      "public_key_path": "C:\\wamp64\\www\\pbb\\kit-setup\\fixtures\\package-signing\\pbb-test-public.pem"
+    }
+  ]
+}

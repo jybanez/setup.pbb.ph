@@ -1,0 +1,59 @@
+{
+  "name": "pbb-kit-setup",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PBB Kit Setup desktop installer shell",
+  "main": "desktop/main.js",
+  "scripts": {
+    "desktop": "electron .",
+    "check:desktop": "node --check desktop/main.js && node --check desktop/preload.js && node --check desktop/renderer.js && node --check desktop/config-builder.js",
+    "package:desktop:dir": "electron-builder --dir",
+    "package:desktop:win": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "ph.pbb.setup",
+    "productName": "PBB Kit Setup",
+    "directories": {
+      "output": "out"
+    },
+    "files": [
+      "desktop/**/*",
+      "bin/**/*",
+      "src/**/*",
+      "schema/**/*",
+      "examples/**/*",
+      "packages/**/*",
+      "fixtures/package-signing/**/*",
+      "docs/app-installer-template.md",
+      "docs/kit-setup-runner.md",
+      "docs/non-technical-install-flow.md",
+      "README.md",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "desktop/main.js"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PBB Kit Setup"
+    }
+  },
+  "devDependencies": {
+    "electron": "^42.1.0",
+    "electron-builder": "^26.0.12"
+  }
+}

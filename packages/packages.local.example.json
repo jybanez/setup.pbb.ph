@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "generated_for": "local Kit Setup harness",
+  "packages": [
+    {
+      "app_id": "pbb-mapserver",
+      "version": "1.0.0",
+      "source_type": "directory",
+      "path": "C:\\wamp64\\www\\mapserver",
+      "trusted": true,
+      "signature_status": "local-trusted"
+    },
+    {
+      "app_id": "pbb-maestro",
+      "version": "1.0.0",
+      "source_type": "directory",
+      "path": "C:\\wamp64\\www\\pbb\\maestro",
+      "trusted": true,
+      "signature_status": "local-trusted"
+    },
+    {
+      "app_id": "pbb-realtime",
+      "version": "1.0.0",
+      "source_type": "directory",
+      "path": "C:\\wamp64\\www\\pbb\\realtime",
+      "trusted": true,
+      "signature_status": "local-trusted"
+    },
+    {
+      "app_id": "pbb-relay",
+      "version": "1.1.0",
+      "source_type": "directory",
+      "path": "C:\\wamp64\\www\\pbb\\relay",
+      "trusted": true,
+      "signature_status": "local-trusted"
+    },
+    {
+      "app_id": "pbb-hotline",
+      "version": "5.6.1",
+      "source_type": "directory",
+      "path": "C:\\wamp64\\www\\pbb\\hotline",
+      "trusted": true,
+      "signature_status": "local-trusted"
+    }
+  ]
+}

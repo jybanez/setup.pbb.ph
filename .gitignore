@@ -1,1 +1,4 @@
 storage/
+node_modules/
+dist/
+out/
