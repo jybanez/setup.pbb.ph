@@ -1,12 +1,13 @@
 {
   "name": "pbb-kit-setup",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Project Bantay Bayan setup desktop installer shell",
   "main": "desktop/main.js",
   "scripts": {
     "desktop": "electron .",
     "check:desktop": "node --check desktop/main.js && node --check desktop/preload.js && node --check desktop/renderer.js && node --check desktop/config-builder.js",
+    "packages:bundle": "powershell -ExecutionPolicy Bypass -File scripts/build-bundled-packages.ps1",
     "package:desktop:dir": "electron-builder --dir",
     "package:desktop:win": "electron-builder --win nsis"
   },

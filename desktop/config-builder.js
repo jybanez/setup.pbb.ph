@@ -47,13 +47,14 @@ function applyKitOwnedPaths(config, repoRoot, userDataPath, basePath) {
   const runRoot = path.join(userDataPath, 'runs');
   const packageCache = path.join(userDataPath, 'package-cache');
   const packagesRoot = path.join(repoRoot, 'packages');
-  const packageManifest = path.join(packagesRoot, 'packages.local.example.json');
+  const packageManifest = path.join(packagesRoot, 'packages.bundled.json');
 
   setNestedValue(config, ['kit', 'run_root'], runRoot);
   setNestedValue(config, ['kit', 'install_root'], basePath || getNestedValue(config, ['kit', 'install_root']) || '');
   setNestedValue(config, ['paths', 'package_cache'], packageCache);
   setNestedValue(config, ['packages', 'base_path'], packagesRoot);
   setNestedValue(config, ['packages', 'manifest_path'], packageManifest);
+  setNestedValue(config, ['packages', 'dry_run'], false);
 }
 
 function normalizeAppScopes(appScopes) {
@@ -92,6 +93,7 @@ function applyAppScopesAndPaths(config, selectedApps, basePath) {
     appConfig.install_scope = scope;
     if (scope === 'local') {
       appConfig.install_path = installPath;
+      appConfig.release_path = installPath;
       appConfig.public_path = appId === 'pbb-mapserver' ? installPath : path.join(installPath, 'public');
     }
 

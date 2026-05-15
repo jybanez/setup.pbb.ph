@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.2';
+    private const VERSION = '0.1.3';
 
     public function main(array $argv): int
     {
@@ -290,6 +290,8 @@ final class KitSetupRunner
                 'status' => $packages['status'],
                 'manifest_path' => $packages['manifest_path'] ?? null,
                 'selected_count' => count($packages['packages'] ?? []),
+                'failed' => array_values(array_filter($packages['packages'] ?? [], static fn (array $package): bool => ($package['status'] ?? '') === 'failed')),
+                'warnings' => array_values(array_filter($packages['packages'] ?? [], static fn (array $package): bool => ($package['status'] ?? '') === 'warning')),
             ],
             'dns' => [
                 'status' => $dns['status'],
