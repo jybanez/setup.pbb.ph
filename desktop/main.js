@@ -8,6 +8,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const defaultConfigPath = path.join(repoRoot, 'examples', 'kit-config.local-all.example.json');
 const runnerPath = path.join(repoRoot, 'bin', 'kit-setup.php');
 const appIconPath = path.join(repoRoot, 'assets', 'branding', 'app-icon.ico');
+const launchMode = getLaunchMode();
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -15,7 +16,7 @@ function createWindow() {
     height: 760,
     minWidth: 980,
     minHeight: 640,
-    title: 'Project Bantay Bayan',
+    title: launchMode === 'data-prep' ? 'Project Bantay Bayan Data Prep' : 'Project Bantay Bayan Setup',
     icon: appIconPath,
     backgroundColor: '#f5f7f9',
     webPreferences: {
@@ -48,8 +49,21 @@ ipcMain.handle('kit:get-defaults', async () => ({
   repoRoot,
   configPath: defaultConfigPath,
   phpPath: findPhpBinary(),
-  userDataPath: app.getPath('userData')
+  userDataPath: app.getPath('userData'),
+  launchMode
 }));
+
+function getLaunchMode() {
+  const modeArg = process.argv.find((arg) => arg.startsWith('--mode='));
+  if (modeArg) {
+    return modeArg.split('=')[1] === 'data-prep' ? 'data-prep' : 'setup';
+  }
+  const modeIndex = process.argv.indexOf('--mode');
+  if (modeIndex >= 0 && process.argv[modeIndex + 1] === 'data-prep') {
+    return 'data-prep';
+  }
+  return 'setup';
+}
 
 ipcMain.handle('kit:select-config', async () => {
   const result = await dialog.showOpenDialog({

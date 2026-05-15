@@ -8,6 +8,8 @@ const state = {
 
 const elements = {
   stageNav: document.getElementById('stageNav'),
+  appModeTitle: document.getElementById('appModeTitle'),
+  appModeSubtitle: document.getElementById('appModeSubtitle'),
   stageTitle: document.getElementById('stageTitle'),
   chooseConfigButton: document.getElementById('chooseConfigButton'),
   refreshButton: document.getElementById('refreshButton'),
@@ -95,6 +97,8 @@ const guardedActions = new Set(['prepare-packages', 'dns-apply', 'ssl-apply', 'i
 window.addEventListener('DOMContentLoaded', async () => {
   const defaults = await window.kitSetup.getDefaults();
   state.templateConfigPath = defaults.configPath;
+  state.launchMode = defaults.launchMode || 'setup';
+  applyLaunchMode(state.launchMode);
   elements.phpPathInput.value = defaults.phpPath;
   elements.configPathInput.value = defaults.configPath;
   elements.basePathInput.value = 'C:\\wamp64\\www\\pbb-node';
@@ -104,6 +108,20 @@ window.addEventListener('DOMContentLoaded', async () => {
   setStages(fallbackStages);
   bindEvents();
 });
+
+function applyLaunchMode(mode) {
+  if (mode === 'data-prep') {
+    document.title = 'Project Bantay Bayan Data Prep';
+    elements.appModeTitle.textContent = 'Data Prep';
+    elements.appModeSubtitle.textContent = 'Post-install tools';
+    state.selectedStageIndex = 10;
+    appendOutput('Data Prep mode: use the Data Prep action after the node installation is complete.');
+    return;
+  }
+  document.title = 'Project Bantay Bayan Setup';
+  elements.appModeTitle.textContent = 'Setup';
+  elements.appModeSubtitle.textContent = 'Node installer';
+}
 
 function bindEvents() {
   elements.chooseConfigButton.addEventListener('click', async () => {
