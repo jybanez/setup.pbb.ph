@@ -22,7 +22,7 @@ This checklist tracks implementation against the 12-step non-technical installer
 | 8 | Remote Dependency Check | [~] | `remote-check` action validates remote app DNS, optional runtime credentials, and HTTP health endpoints | Test against protected remote app health endpoints |
 | 9 | Admin Account | [~] | Desktop runtime password field, shared first-admin contract, `password_env` resolution, and config injection | Add password strength validation in visual setup |
 | 10 | Installation Plan | [~] | `plan` action writes consolidated platform, package, DNS, SSL, remote dependency, and app summaries into `kit-report.json` | Add visual review/confirm screen |
-| 11 | Stage-By-Stage Install | [~] | Desktop shell scaffold, focused stage panels, per-stage validation, confirmation gates, checkpoint grid, per-app retry, `stage-report`, `preflight`, `install`, `populate`, and `smoke-check` actions | Test smoke checks on a fully installed node |
+| 11 | Stage-By-Stage Install | [~] | Desktop shell scaffold, focused stage panels, per-stage validation, confirmation gates, checkpoint grid, per-app retry, `stage-report`, `preflight`, `install`, and `smoke-check` actions | Test smoke checks on a fully installed node |
 | 12 | Finish | [~] | `finish-report` action, desktop finish summary, Apache config-test after vhost apply, and unpacked desktop packaging target | Add guarded service reload/status controls and production installer signing |
 
 ## Security Checklist
@@ -52,6 +52,7 @@ This checklist tracks implementation against the 12-step non-technical installer
 - [x] Run MapServer, Maestro, and Realtime population dry-runs through the Kit harness.
 - [x] Run Hotline population dry-run through the Kit harness.
 - [x] Complete all-app population dry-run gate.
+- [x] Reclassify population as a separate post-install data preparation workflow.
 - [x] Add trusted package manifest format.
 - [x] Add package preparation action.
 - [x] Run package preparation dry-run across all selected local apps.
@@ -79,3 +80,12 @@ This checklist tracks implementation against the 12-step non-technical installer
 - [x] Add same-run action checkpoints and desktop checkpoint grid.
 - [x] Add per-app retry/resume for partial install failures.
 - [x] Add finish report and desktop finish summary.
+
+## Separate Data Preparation Tool
+
+The existing `populate` runner action remains available as the backend harness for app-owned data tools, but it should not be treated as a required installer stage.
+
+Target product split:
+
+- `Project Bantay Bayan Setup`: install and verify the node kit.
+- `Project Bantay Bayan Data Prep`: prepare, import, refresh, or repair operational data after installation.

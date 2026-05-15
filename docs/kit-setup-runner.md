@@ -19,7 +19,7 @@ It currently supports:
 - generating per-app unattended config files
 - verifying app `checksums.sha256` files during planning
 - running app installers in `preflight` or install mode
-- running enabled initial-data population tools through the `populate` action
+- running post-install data preparation tools through the separate `populate` action
 - collecting installer status output, install manifests, service declarations, and app reports
 - aggregating app reports into `kit-report.json`
 
@@ -136,7 +136,7 @@ Run install:
 & "C:\wamp64\bin\php\php8.2.29\php.exe" "C:\wamp64\www\pbb\kit-setup\bin\kit-setup.php" --config "C:\wamp64\www\pbb\kit-setup\examples\kit-config.stub.json" --action install
 ```
 
-Run enabled population tools:
+Run enabled data preparation tools after installation:
 
 ```powershell
 & "C:\wamp64\bin\php\php8.2.29\php.exe" "C:\wamp64\www\pbb\kit-setup\bin\kit-setup.php" --config "C:\wamp64\www\pbb\kit-setup\examples\kit-config.stub.json" --action populate
@@ -164,7 +164,7 @@ Before running it for a real install, replace all `REPLACE_WITH_...` placeholder
 - email: `admin@pbb.local`
 - password: supplied by the installing admin during Kit Setup
 
-Population sections are disabled by default in the example. Set an app's `*.populate.enabled` value to `true` only when Kit Setup should invoke that app's initial-data tool.
+Population sections are disabled by default in the example. Set an app's `*.populate.enabled` value to `true` only when the separate data preparation workflow should invoke that app's data tool. Population is not part of the required install path.
 
 ## Hub Resolution
 
@@ -443,7 +443,7 @@ storage/runs/{run-id}/finish-report.json
 
 It summarizes app URLs, app statuses, admin login email, key report paths, DNS/SSL/platform state, remote dependency state, checkpoints, and required or recommended follow-ups for final handoff. When prior install actions produced app manifests or service artifact declarations, the finish report includes those per app under `apps[].manifest` and `apps[].services`.
 
-## Population Tool Contracts
+## Data Preparation Tool Contracts
 
 Preferred tools should be declared in `release.json` with metadata and should accept:
 
@@ -451,7 +451,7 @@ Preferred tools should be declared in `release.json` with metadata and should ac
 php tools/populate-initial-data.php --mode initial --config path\to\app.config.json --report path\to\tool.report.json --dry-run
 ```
 
-Kit Setup only runs a tool when its configured `config_section` has `"enabled": true`.
+Kit Setup only runs a tool when its configured `config_section` has `"enabled": true`. These tools are intended for post-install data preparation, refresh, or repair workflows, not required installation.
 
 Compatibility support exists for MapServer's current `populate_tiles` script, which is declared as a string path in `release.json`. Kit Setup maps `mapserver.populate` settings into that script's existing flags, including `--base-url`, `--center`, `--radius-km`, `--zooms`, `--types`, `--max-tiles`, `--dry-run`, and `--report`.
 

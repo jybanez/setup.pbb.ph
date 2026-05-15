@@ -4,8 +4,10 @@ function buildRuntimeConfig(template, form) {
   const config = JSON.parse(JSON.stringify(template));
   const basePath = cleanString(form.basePath) || getNestedValue(config, ['layout', 'base_path']) || getNestedValue(config, ['paths', 'apps_base']);
   const machineIp = cleanString(form.machineIp) || getNestedValue(config, ['machine', 'ip_address']) || '127.0.0.1';
+  const phpPath = cleanString(form.phpPath) || getNestedValue(config, ['runtime', 'php_binary']) || 'php';
   const selectedApps = normalizeAppScopes(form.appScopes);
 
+  setNestedValue(config, ['runtime', 'php_binary'], phpPath);
   setNestedValue(config, ['hub', 'hub_id'], toNumberOrExisting(form.hubId, getNestedValue(config, ['hub', 'hub_id'])));
   setNestedValue(config, ['hub', 'token_env'], 'PBB_HUB_TOKEN');
   setNestedValue(config, ['machine', 'ip_address'], machineIp);

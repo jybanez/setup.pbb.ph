@@ -123,3 +123,17 @@ For another machine, start with dry-run behavior:
 - run `detect`, `stage-report`, `plan`, `prepare-packages`, `dns-plan`, `ssl-plan`, and `remote-check`
 
 Only after the reports look correct should the machine test enable apply modes.
+
+## Data Preparation Boundary
+
+Optional data population is not part of the required installer flow.
+
+The installer should make the node kit operational: packages placed, app configs written, migrations run, first admin created, DNS/SSL/web-server configuration prepared, services generated or registered, and health/smoke checks completed.
+
+Data preparation is a separate post-install workflow. It can still reuse the app-owned population contracts already implemented by MapServer, Maestro, Realtime, and Hotline, but it should be presented as a separate tool/mode such as:
+
+```text
+Project Bantay Bayan Data Prep
+```
+
+This keeps the core install path simpler and safer. Data preparation may be repeated later to refresh tiles, boundaries, reference records, routing data, teams, operators, policies, or local cache. A failed data preparation run should not imply that the node installation itself failed.

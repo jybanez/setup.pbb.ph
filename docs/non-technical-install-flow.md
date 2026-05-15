@@ -63,11 +63,24 @@ Kit Setup shows a final summary of local apps, remote dependencies, base path, a
 
 ## 11. Stage-By-Stage Install
 
-Kit Setup generates configs, runs app installers, configures services, runs migrations, populates initial data, and runs smoke checks.
+Kit Setup generates configs, runs app installers, configures services, runs migrations, and runs smoke checks. It does not perform optional operational data population as part of the required install path.
 
 ## 12. Finish
 
 Kit Setup shows app URLs, admin login email, service status, DNS/cert/vhost status, setup report path, and any manual follow-up needed.
+
+## Separate Tool: Data Preparation
+
+Operational data preparation should run after the node kit is installed and verified.
+
+This separate tool/workflow can prepare or refresh:
+
+- MapServer boundaries and tile cache
+- Maestro application records and telemetry setup
+- Realtime clients, policies, projects, and media ingest settings
+- Hotline catalogs, teams, operators, dispatch defaults, and demo/reference data
+
+Population is intentionally separate because it is repeatable, source-dependent, and may need to run again after Hub data or local operational data changes. A population failure should not make the core node installation look failed.
 
 ## Future Roadmap
 

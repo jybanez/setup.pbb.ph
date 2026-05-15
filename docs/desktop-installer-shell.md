@@ -18,6 +18,7 @@ The shell does not duplicate installer logic. It calls the PHP runner actions an
 - Shows per-stage validation and inline recovery guidance.
 - Shows same-run action checkpoints for retry/resume visibility.
 - Shows a finish summary with app links, admin email, report paths, and follow-ups.
+- Keeps data preparation as a separate post-install action rather than a required installer stage.
 - Builds a generated runtime config under `storage/desktop-configs/` instead of editing checked-in examples.
 - Requires explicit confirmation before guarded or mutating actions run.
 - Runs `stage-report` and renders stage state.
@@ -34,7 +35,7 @@ The shell does not duplicate installer logic. It calls the PHP runner actions an
   - `remote-check`
   - `preflight`
   - `install`
-  - `populate`
+  - `populate` / Data Prep
   - `smoke-check`
   - `finish-report`
 - Accepts Hub token, Technitium token, and admin password as runtime-only fields.
@@ -49,7 +50,7 @@ The shell blocks these actions behind a confirmation modal:
 - `dns-apply`
 - `ssl-apply`
 - `install`
-- `populate`
+- `populate` / Data Prep
 
 The modal summarizes the current config state, such as `packages.dry_run`, `dns.update_mode`, `ssl.web_server_update_mode`, selected local apps, and target Apache include path.
 
@@ -63,7 +64,7 @@ The renderer validates key setup inputs before building runtime config or runnin
 - Base path for local installation.
 - Machine IP/host, DNS zone, Technitium URL, and token when DNS apply is enabled.
 - Certificate folder or PEM bundle, plus Apache include target when web-server apply is enabled.
-- First administrator password length before install/population.
+- First administrator password length before install/data preparation.
 
 These checks are UI guidance only. Backend runner actions still perform the authoritative validation and write reports.
 
@@ -77,7 +78,7 @@ storage/runs/{run-id}/checkpoints.json
 
 The desktop shell reads this file after each action and renders a checkpoint grid. Each checkpoint shows whether a runner action is still pending, succeeded, warned, skipped, or failed. Clicking an item reruns that action through the same guarded flow.
 
-App reports from `plan`, `preflight`, `install`, and `populate` also populate a per-app retry panel. Each app row can rerun `preflight`, `install`, or `populate` for only that app through the runner's `--app <app-id>` filter.
+App reports from `plan`, `preflight`, `install`, and `populate` also populate a per-app retry panel. Each app row can rerun `preflight`, `install`, or post-install Data Prep for only that app through the runner's `--app <app-id>` filter.
 
 ## Finish Summary
 

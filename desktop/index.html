@@ -32,10 +32,13 @@
         </header>
 
         <section class="config-panel" aria-label="Runtime inputs">
-          <label>
-            <span>PHP</span>
-            <input id="phpPathInput" type="text" spellcheck="false">
-          </label>
+          <div class="inline-field">
+            <label>
+              <span>PHP</span>
+              <input id="phpPathInput" type="text" spellcheck="false">
+            </label>
+            <button class="icon-button" id="phpPathButton" type="button">...</button>
+          </div>
           <label>
             <span>Config</span>
             <input id="configPathInput" type="text" spellcheck="false">
@@ -159,12 +162,12 @@
 
             <fieldset data-stage-panel="10">
               <legend>Installation Plan</legend>
-              <p class="panel-copy">Review the generated plan before package deployment, DNS writes, SSL writes, install, or population actions run.</p>
+              <p class="panel-copy">Review the generated plan before package deployment, DNS writes, SSL writes, or install actions run.</p>
             </fieldset>
 
             <fieldset data-stage-panel="11">
               <legend>Stage-By-Stage Install</legend>
-              <p class="panel-copy">Install and population actions are guarded. Confirm each mutating action before it runs.</p>
+              <p class="panel-copy">Install actions are guarded. Confirm each mutating action before it runs. Data preparation is a separate post-install workflow.</p>
             </fieldset>
 
             <fieldset data-stage-panel="12">
@@ -209,7 +212,7 @@
         <section class="app-retry-panel" aria-label="Per-app retry">
           <div class="resume-header">
             <span>Per-App Retry</span>
-            <span>Use after preflight, install, or populate reports</span>
+            <span>Use after preflight, install, or data preparation reports</span>
           </div>
           <div class="app-retry-grid" id="appRetryGrid"></div>
         </section>
@@ -246,7 +249,7 @@
           <button data-action="remote-check" type="button">Remote</button>
           <button data-action="preflight" type="button">Preflight</button>
           <button data-action="install" type="button">Install</button>
-          <button data-action="populate" type="button">Populate</button>
+          <button data-action="populate" type="button">Data Prep</button>
           <button data-action="smoke-check" type="button">Smoke</button>
           <button data-action="finish-report" type="button">Finish</button>
         </section>

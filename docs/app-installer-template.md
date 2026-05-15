@@ -554,9 +554,11 @@ Apps should support three service registration modes:
 
 ## Initial Data Population Tools
 
-Apps may expose app-owned tools that populate first-run data after the installer has prepared the runtime. This is additive to the installer contract: install should make the app runnable, while population should load optional operational data, default policy, seed records, reference data, or runtime cache.
+Apps may expose app-owned tools that prepare data after the installer has prepared the runtime. This is additive to the installer contract: install should make the app runnable, while data preparation should load optional operational data, default policy, seed records, reference data, or runtime cache.
 
 Use this pattern when data loading is useful but should remain explicit, repeatable, and app-specific. Do not hide large data population inside `fresh` install unless the data is required for the app to boot.
+
+Kit Setup treats population as a separate post-install data preparation workflow, not as a required installer stage. A failed population run should not imply that core installation failed.
 
 Recommended tool layout:
 
@@ -698,7 +700,7 @@ Suggested first-run population ownership:
 - MapServer: tile cache population for barangays, bounding boxes, or center/radius areas.
 - Hotline: incident types, response teams, roles, operators, dispatch defaults, SITREP routing.
 
-Kit Setup should run population tools only when explicitly enabled in the kit config. The default path should be install first, health check second, population third, final cross-app smoke last.
+Kit Setup should run population tools only when explicitly enabled in the kit config and launched from the data preparation workflow. The default installer path should be install first, health check second, final cross-app smoke last.
 
 ## App-Specific Sections
 

@@ -6,8 +6,8 @@ const configBuilder = require('./config-builder');
 
 const repoRoot = path.resolve(__dirname, '..');
 const defaultConfigPath = path.join(repoRoot, 'examples', 'kit-config.local-all.example.json');
-const defaultPhpPath = 'C:\\wamp64\\bin\\php\\php8.2.29\\php.exe';
 const runnerPath = path.join(repoRoot, 'bin', 'kit-setup.php');
+const appIconPath = path.join(repoRoot, 'assets', 'branding', 'app-icon.ico');
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -15,7 +15,8 @@ function createWindow() {
     height: 760,
     minWidth: 980,
     minHeight: 640,
-    title: 'PBB Kit Setup',
+    title: 'Project Bantay Bayan',
+    icon: appIconPath,
     backgroundColor: '#f5f7f9',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -46,7 +47,7 @@ app.on('window-all-closed', () => {
 ipcMain.handle('kit:get-defaults', async () => ({
   repoRoot,
   configPath: defaultConfigPath,
-  phpPath: fs.existsSync(defaultPhpPath) ? defaultPhpPath : 'php'
+  phpPath: findPhpBinary()
 }));
 
 ipcMain.handle('kit:select-config', async () => {
@@ -158,7 +159,8 @@ ipcMain.handle('kit:run-action', async (_event, request) => {
     args.push('--app', appId);
   }
 
-  const processResult = await runProcess(phpPath, args, env);
+  const resolvedPhpPath = resolvePhpForRun(phpPath);
+  const processResult = await runProcess(resolvedPhpPath, args, env);
   const reportPath = getReportPath(configPath, runId, action);
   const report = readJsonIfExists(reportPath);
   const checkpointPath = getCheckpointPath(configPath, runId);
@@ -176,6 +178,51 @@ ipcMain.handle('kit:run-action', async (_event, request) => {
     appId: appId || null
   };
 });
+
+function findPhpBinary() {
+  const candidates = [
+    ...findWampPhpCandidates(),
+    'C:\\xampp\\php\\php.exe',
+    'C:\\tools\\php\\php.exe',
+    'C:\\php\\php.exe',
+    'C:\\Program Files\\PHP\\php.exe'
+  ];
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return 'php';
+}
+
+function findWampPhpCandidates() {
+  const phpRoot = 'C:\\wamp64\\bin\\php';
+  try {
+    if (!fs.existsSync(phpRoot)) {
+      return [];
+    }
+    return fs.readdirSync(phpRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.toLowerCase().startsWith('php'))
+      .map((entry) => path.join(phpRoot, entry.name, 'php.exe'))
+      .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }));
+  } catch (_error) {
+    return [];
+  }
+}
+
+function resolvePhpForRun(phpPath) {
+  const trimmed = String(phpPath || '').trim();
+  if (trimmed === '' || trimmed.toLowerCase() === 'php') {
+    return findPhpBinary();
+  }
+  if (path.isAbsolute(trimmed) && !fs.existsSync(trimmed)) {
+    const discovered = findPhpBinary();
+    if (discovered !== 'php') {
+      return discovered;
+    }
+  }
+  return trimmed;
+}
 
 function buildRuntimeEnv(secrets) {
   const env = { ...process.env };
@@ -258,12 +305,12 @@ function describeAction(action, config) {
       ]
     },
     populate: {
-      title: 'Populate Initial Data',
+      title: 'Run Data Preparation',
       risk: 'mutating',
-      summary: 'Enabled population tools may create initial records, clients, tiles, or seed data.',
+      summary: 'Enabled data preparation tools may create or refresh operational records, clients, tiles, or cache data after installation.',
       details: [
         `Selected local apps: ${localApps.length}`,
-        'Only app-declared tools with enabled population config will run.'
+        'Only app-declared tools with enabled population config will run. This is separate from the required installer path.'
       ]
     },
     'smoke-check': {

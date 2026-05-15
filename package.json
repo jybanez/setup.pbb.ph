@@ -2,7 +2,7 @@
   "name": "pbb-kit-setup",
   "version": "0.1.0",
   "private": true,
-  "description": "PBB Kit Setup desktop installer shell",
+  "description": "Project Bantay Bayan setup desktop installer shell",
   "main": "desktop/main.js",
   "scripts": {
     "desktop": "electron .",
@@ -12,7 +12,8 @@
   },
   "build": {
     "appId": "ph.pbb.setup",
-    "productName": "PBB Kit Setup",
+    "productName": "Project Bantay Bayan",
+    "asar": false,
     "directories": {
       "output": "out"
     },
@@ -22,6 +23,7 @@
       "src/**/*",
       "schema/**/*",
       "examples/**/*",
+      "assets/branding/**/*",
       "packages/**/*",
       "fixtures/package-signing/**/*",
       "docs/app-installer-template.md",
@@ -34,6 +36,7 @@
       "main": "desktop/main.js"
     },
     "win": {
+      "icon": "assets/branding/app-icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -49,7 +52,12 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "PBB Kit Setup"
+      "shortcutName": "Project Bantay Bayan",
+      "installerIcon": "assets/branding/app-icon.ico",
+      "uninstallerIcon": "assets/branding/app-icon.ico",
+      "installerHeader": "assets/branding/installer-header.bmp",
+      "installerSidebar": "assets/branding/installer-sidebar.bmp",
+      "uninstallerSidebar": "assets/branding/installer-sidebar.bmp"
     }
   },
   "devDependencies": {

@@ -12,6 +12,7 @@ const elements = {
   chooseConfigButton: document.getElementById('chooseConfigButton'),
   refreshButton: document.getElementById('refreshButton'),
   phpPathInput: document.getElementById('phpPathInput'),
+  phpPathButton: document.getElementById('phpPathButton'),
   configPathInput: document.getElementById('configPathInput'),
   hubTokenInput: document.getElementById('hubTokenInput'),
   technitiumTokenInput: document.getElementById('technitiumTokenInput'),
@@ -113,6 +114,7 @@ function bindEvents() {
     }
   });
 
+  elements.phpPathButton.addEventListener('click', () => choosePhpBinary());
   elements.basePathButton.addEventListener('click', () => chooseFolder(elements.basePathInput, 'Choose App Base Path'));
   elements.certRootButton.addEventListener('click', () => chooseFolder(elements.certRootInput, 'Choose Certificate Folder'));
   elements.pemUploadButton.addEventListener('click', () => choosePemFile());
@@ -181,6 +183,21 @@ async function choosePemFile() {
   }
 }
 
+async function choosePhpBinary() {
+  const selected = await window.kitSetup.selectFile({
+    title: 'Choose PHP Executable',
+    defaultPath: elements.phpPathInput.value,
+    filters: [
+      { name: 'PHP executable', extensions: ['exe'] },
+      { name: 'All files', extensions: ['*'] }
+    ]
+  });
+  if (selected) {
+    elements.phpPathInput.value = selected;
+    renderActiveStageValidation();
+  }
+}
+
 async function buildRuntimeConfig() {
   if (state.busy) {
     return;
@@ -214,6 +231,7 @@ async function buildRuntimeConfig() {
 
 function collectSetupForm() {
   return {
+    phpPath: elements.phpPathInput.value,
     hubId: elements.hubIdInput.value,
     basePath: elements.basePathInput.value,
     machineIp: elements.machineIpInput.value,
@@ -411,7 +429,7 @@ function renderAppRetry(report) {
       <div class="app-retry-actions">
         <button type="button" data-app-action="preflight" data-app-id="${escapeHtml(appId)}">Preflight</button>
         <button type="button" data-app-action="install" data-app-id="${escapeHtml(appId)}">Install</button>
-        <button type="button" data-app-action="populate" data-app-id="${escapeHtml(appId)}">Populate</button>
+        <button type="button" data-app-action="populate" data-app-id="${escapeHtml(appId)}">Data Prep</button>
       </div>
     `;
     row.querySelectorAll('[data-app-action]').forEach((button) => {
@@ -652,7 +670,7 @@ function validateStage(step) {
   if (step === 9) {
     const password = elements.adminPasswordInput.value;
     if (password.length === 0) {
-      warn('Enter the first administrator password before preflight, install, or population.');
+      warn('Enter the first administrator password before preflight, install, or data preparation.');
     } else if (password.length < 8) {
       fail('Use an administrator password with at least 8 characters.');
     }
