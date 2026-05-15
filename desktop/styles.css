@@ -72,14 +72,13 @@ button:disabled {
 }
 
 .brand-mark {
-  width: 46px;
-  height: 46px;
+  width: 58px;
+  height: 44px;
   border-radius: 6px;
-  display: grid;
-  place-items: center;
-  background: #dce9ed;
-  color: #123942;
-  font-weight: 800;
+  display: block;
+  background: #f4f8fa;
+  object-fit: contain;
+  padding: 5px;
 }
 
 .brand h1 {
