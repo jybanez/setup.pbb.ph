@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.0';
+    private const VERSION = '0.1.2';
 
     public function main(array $argv): int
     {
@@ -2985,31 +2985,20 @@ final class KitSetupRunner
     private function fetchHubRecord(string $baseUrl, int $hubId, string $token): array
     {
         $url = $baseUrl . '/api/hubs/' . $hubId;
-        $context = stream_context_create([
-            'http' => [
-                'method' => 'GET',
-                'header' => [
-                    'Accept: application/json',
-                    'Authorization: Bearer ' . $token,
-                ],
-                'ignore_errors' => true,
-                'timeout' => 30,
-            ],
-            'ssl' => $this->tlsOptions(),
+        $request = $this->httpGet($url, [
+            'Accept: application/json',
+            'Authorization: Bearer ' . $token,
         ]);
-
-        $body = @file_get_contents($url, false, $context);
-        $statusCode = $this->extractHttpStatusCode($http_response_header ?? []);
+        $body = $request['body'];
+        $statusCode = (int) $request['status_code'];
         if ($body === false) {
-            $lastError = error_get_last();
-            $detail = is_array($lastError) && isset($lastError['message'])
-                ? ' ' . (string) $lastError['message']
-                : '';
             $expectedCaFile = $this->expectedBundledCaFile();
             $caDetail = is_file($expectedCaFile)
                 ? ' CA bundle: ' . $expectedCaFile
                 : ' CA bundle missing: ' . $expectedCaFile;
-            throw new RuntimeException('Unable to call Hub API: ' . $url . '.' . $detail . $caDetail);
+            $transport = (string) ($request['transport'] ?? 'unknown');
+            $detail = (string) ($request['error'] ?? '');
+            throw new RuntimeException('Unable to call Hub API via ' . $transport . ': ' . $url . '. ' . $detail . $caDetail);
         }
 
         $payload = json_decode($body, true);
@@ -3030,6 +3019,89 @@ final class KitSetupRunner
         return [
             'http_status' => $statusCode,
             'hub' => $hub,
+        ];
+    }
+
+    private function httpGet(string $url, array $headers): array
+    {
+        $curlResult = null;
+        if (function_exists('curl_init')) {
+            $curlResult = $this->httpGetWithCurl($url, $headers);
+            if ($curlResult['body'] !== false) {
+                return $curlResult;
+            }
+        }
+
+        $streamResult = $this->httpGetWithStream($url, $headers);
+        if ($streamResult['body'] === false && is_array($curlResult)) {
+            $streamResult['error'] = trim((string) $streamResult['error'] . ' cURL fallback error: ' . (string) $curlResult['error']);
+        }
+        return $streamResult;
+    }
+
+    private function httpGetWithCurl(string $url, array $headers): array
+    {
+        $handle = curl_init($url);
+        if ($handle === false) {
+            return [
+                'transport' => 'curl',
+                'body' => false,
+                'status_code' => 0,
+                'error' => 'Unable to initialize cURL.',
+            ];
+        }
+
+        $options = [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_USERAGENT => 'PBB-Kit-Setup/' . self::VERSION,
+        ];
+        $caFile = $this->bundledCaFile();
+        if ($caFile !== '') {
+            $options[CURLOPT_CAINFO] = $caFile;
+        }
+        curl_setopt_array($handle, $options);
+
+        $body = curl_exec($handle);
+        $statusCode = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+        $error = curl_error($handle);
+        curl_close($handle);
+
+        return [
+            'transport' => 'curl',
+            'body' => is_string($body) ? $body : false,
+            'status_code' => $statusCode,
+            'error' => $error,
+        ];
+    }
+
+    private function httpGetWithStream(string $url, array $headers): array
+    {
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'header' => $headers,
+                'ignore_errors' => true,
+                'timeout' => 30,
+            ],
+            'ssl' => $this->tlsOptions(),
+        ]);
+
+        $body = @file_get_contents($url, false, $context);
+        $statusCode = $this->extractHttpStatusCode($http_response_header ?? []);
+        $lastError = error_get_last();
+        $detail = is_array($lastError) && isset($lastError['message'])
+            ? (string) $lastError['message']
+            : '';
+
+        return [
+            'transport' => 'stream',
+            'body' => $body,
+            'status_code' => $statusCode,
+            'error' => $detail,
         ];
     }
 
