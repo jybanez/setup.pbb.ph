@@ -2998,10 +2998,18 @@ final class KitSetupRunner
             'ssl' => $this->tlsOptions(),
         ]);
 
-        $body = file_get_contents($url, false, $context);
+        $body = @file_get_contents($url, false, $context);
         $statusCode = $this->extractHttpStatusCode($http_response_header ?? []);
         if ($body === false) {
-            throw new RuntimeException('Unable to call Hub API: ' . $url);
+            $lastError = error_get_last();
+            $detail = is_array($lastError) && isset($lastError['message'])
+                ? ' ' . (string) $lastError['message']
+                : '';
+            $expectedCaFile = $this->expectedBundledCaFile();
+            $caDetail = is_file($expectedCaFile)
+                ? ' CA bundle: ' . $expectedCaFile
+                : ' CA bundle missing: ' . $expectedCaFile;
+            throw new RuntimeException('Unable to call Hub API: ' . $url . '.' . $detail . $caDetail);
         }
 
         $payload = json_decode($body, true);
@@ -3050,8 +3058,13 @@ final class KitSetupRunner
 
     private function bundledCaFile(): string
     {
-        $path = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'certs' . DIRECTORY_SEPARATOR . 'cacert.pem';
+        $path = $this->expectedBundledCaFile();
         return is_file($path) ? $path : '';
+    }
+
+    private function expectedBundledCaFile(): string
+    {
+        return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'certs' . DIRECTORY_SEPARATOR . 'cacert.pem';
     }
 
     private function applyHubRecordToConfig(array $config, array $hub, string $baseUrl, int $hubId): array

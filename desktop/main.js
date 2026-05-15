@@ -8,6 +8,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const defaultConfigPath = path.join(repoRoot, 'examples', 'kit-config.local-all.example.json');
 const runnerPath = path.join(repoRoot, 'bin', 'kit-setup.php');
 const appIconPath = path.join(repoRoot, 'assets', 'branding', 'app-icon.ico');
+const caCertPath = path.join(repoRoot, 'assets', 'certs', 'cacert.pem');
 const launchMode = getLaunchMode();
 
 function createWindow() {
@@ -50,6 +51,8 @@ ipcMain.handle('kit:get-defaults', async () => ({
   repoRoot,
   configPath: defaultConfigPath,
   phpPath: findPhpBinary(),
+  caCertPath,
+  caCertExists: fs.existsSync(caCertPath),
   userDataPath: app.getPath('userData'),
   launchMode
 }));
@@ -166,7 +169,7 @@ ipcMain.handle('kit:run-action', async (_event, request) => {
   const runId = String(request.runId || `${action}_${Date.now()}`);
   const appId = String(request.appId || '').trim();
   const env = buildRuntimeEnv(request.secrets || {});
-  const args = [
+  const args = withPhpTlsArgs([
     runnerPath,
     '--config',
     configPath,
@@ -174,7 +177,7 @@ ipcMain.handle('kit:run-action', async (_event, request) => {
     action,
     '--run-id',
     runId
-  ];
+  ]);
   if (appId !== '') {
     args.push('--app', appId);
   }
@@ -258,7 +261,24 @@ function buildRuntimeEnv(secrets) {
       env[envName] = value;
     }
   }
+  if (fs.existsSync(caCertPath)) {
+    env.SSL_CERT_FILE = caCertPath;
+    env.CURL_CA_BUNDLE = caCertPath;
+  }
   return env;
+}
+
+function withPhpTlsArgs(args) {
+  if (!fs.existsSync(caCertPath)) {
+    return args;
+  }
+  return [
+    '-d',
+    `openssl.cafile=${caCertPath}`,
+    '-d',
+    `curl.cainfo=${caCertPath}`,
+    ...args
+  ];
 }
 
 function describeAction(action, config) {
