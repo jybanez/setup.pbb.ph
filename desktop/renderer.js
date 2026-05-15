@@ -278,6 +278,7 @@ async function runAction(action, options = {}) {
   appendOutput(`Running ${action}...`);
 
   try {
+    await buildRuntimeConfigForAction();
     const result = await window.kitSetup.runAction({
       action,
       phpPath: elements.phpPathInput.value,
@@ -293,6 +294,16 @@ async function runAction(action, options = {}) {
     state.busy = false;
     setBusy(false);
   }
+}
+
+async function buildRuntimeConfigForAction() {
+  const result = await window.kitSetup.buildConfig({
+    templatePath: state.templateConfigPath || elements.configPathInput.value,
+    form: collectSetupForm()
+  });
+  elements.configPathInput.value = result.configPath;
+  elements.configBuildStatus.textContent = 'Runtime config ready';
+  return result;
 }
 
 async function requestActionConfirmation(action, options = {}) {

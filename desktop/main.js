@@ -47,7 +47,8 @@ app.on('window-all-closed', () => {
 ipcMain.handle('kit:get-defaults', async () => ({
   repoRoot,
   configPath: defaultConfigPath,
-  phpPath: findPhpBinary()
+  phpPath: findPhpBinary(),
+  userDataPath: app.getPath('userData')
 }));
 
 ipcMain.handle('kit:select-config', async () => {
@@ -99,8 +100,12 @@ ipcMain.handle('kit:build-config', async (_event, request) => {
   }
 
   const form = request.form || {};
-  const config = configBuilder.buildRuntimeConfig(template, form);
-  const configDir = path.join(repoRoot, 'storage', 'desktop-configs');
+  const config = configBuilder.buildRuntimeConfig(template, {
+    ...form,
+    repoRoot,
+    userDataPath: app.getPath('userData')
+  });
+  const configDir = path.join(app.getPath('userData'), 'desktop-configs');
   fs.mkdirSync(configDir, { recursive: true });
   const configPath = path.join(configDir, `kit-config-${Date.now()}.json`);
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');

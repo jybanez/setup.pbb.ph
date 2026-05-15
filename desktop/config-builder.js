@@ -2,11 +2,14 @@ const path = require('path');
 
 function buildRuntimeConfig(template, form) {
   const config = JSON.parse(JSON.stringify(template));
+  const repoRoot = cleanString(form.repoRoot) || path.resolve(__dirname, '..');
+  const userDataPath = cleanString(form.userDataPath) || path.join(repoRoot, 'storage');
   const basePath = cleanString(form.basePath) || getNestedValue(config, ['layout', 'base_path']) || getNestedValue(config, ['paths', 'apps_base']);
   const machineIp = cleanString(form.machineIp) || getNestedValue(config, ['machine', 'ip_address']) || '127.0.0.1';
   const phpPath = cleanString(form.phpPath) || getNestedValue(config, ['runtime', 'php_binary']) || 'php';
   const selectedApps = normalizeAppScopes(form.appScopes);
 
+  applyKitOwnedPaths(config, repoRoot, userDataPath, basePath);
   setNestedValue(config, ['runtime', 'php_binary'], phpPath);
   setNestedValue(config, ['hub', 'hub_id'], toNumberOrExisting(form.hubId, getNestedValue(config, ['hub', 'hub_id'])));
   setNestedValue(config, ['hub', 'token_env'], 'PBB_HUB_TOKEN');
@@ -38,6 +41,19 @@ function buildRuntimeConfig(template, form) {
 
   applyAppScopesAndPaths(config, selectedApps, basePath);
   return config;
+}
+
+function applyKitOwnedPaths(config, repoRoot, userDataPath, basePath) {
+  const runRoot = path.join(userDataPath, 'runs');
+  const packageCache = path.join(userDataPath, 'package-cache');
+  const packagesRoot = path.join(repoRoot, 'packages');
+  const packageManifest = path.join(packagesRoot, 'packages.local.example.json');
+
+  setNestedValue(config, ['kit', 'run_root'], runRoot);
+  setNestedValue(config, ['kit', 'install_root'], basePath || getNestedValue(config, ['kit', 'install_root']) || '');
+  setNestedValue(config, ['paths', 'package_cache'], packageCache);
+  setNestedValue(config, ['packages', 'base_path'], packagesRoot);
+  setNestedValue(config, ['packages', 'manifest_path'], packageManifest);
 }
 
 function normalizeAppScopes(appScopes) {
