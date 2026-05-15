@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "kit": {
+    "node_id": "dev-node",
+    "timezone": "Asia/Manila",
+    "install_root": "C:\\wamp64\\www\\pbb\\kit-setup\\storage\\installed",
+    "run_root": "C:\\wamp64\\www\\pbb\\kit-setup\\storage\\runs",
+    "operator": "kit-setup-dev"
+  },
+  "runtime": {
+    "php_binary": "C:\\wamp64\\bin\\php\\php8.2.29\\php.exe",
+    "service_manager": "manual",
+    "service_registration_mode": "generate"
+  },
+  "shared": {
+    "database": {
+      "driver": "mysql",
+      "host": "127.0.0.1",
+      "port": 3306
+    },
+    "dependencies": {},
+    "secrets": {
+      "policy": "kit-generated"
+    }
+  },
+  "apps": [
+    {
+      "id": "pbb-stub",
+      "enabled": true,
+      "release_path": "C:\\wamp64\\www\\pbb\\kit-setup\\fixtures\\stub-app-release",
+      "mode": "fresh",
+      "install_path": "C:\\wamp64\\www\\pbb\\kit-setup\\storage\\installed\\stub-app",
+      "public_path": "C:\\wamp64\\www\\pbb\\kit-setup\\storage\\public\\stub-app",
+      "app_url": "http://localhost/pbb-kit-stub",
+      "depends_on": [],
+      "config": {
+        "stub": {
+          "simulate_warning": false
+        }
+      }
+    }
+  ]
+}

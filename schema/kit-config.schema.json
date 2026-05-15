@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pbb.local/schemas/kit-config.schema.json",
+  "title": "PBB Kit Setup Config",
+  "type": "object",
+  "required": ["schema_version", "kit", "runtime", "apps"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "kit": {
+      "type": "object",
+      "required": ["node_id", "timezone", "install_root", "run_root"],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "install_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operator": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["php_binary"],
+      "properties": {
+        "php_binary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "service_manager": {
+          "type": "string",
+          "enum": ["manual", "windows-service", "scheduled-task", "systemd"]
+        },
+        "service_registration_mode": {
+          "type": "string",
+          "enum": ["generate", "register", "manual"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "shared": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "object"
+        },
+        "domains": {
+          "type": "object"
+        },
+        "dependencies": {
+          "type": "object"
+        },
+        "secrets": {
+          "type": "object"
+        },
+        "admin": {
+          "type": "object",
+          "properties": {
+            "strategy": {
+              "type": "string",
+              "enum": ["create_if_missing"]
+            },
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            },
+            "must_change_password": {
+              "type": "boolean"
+            },
+            "overwrite_existing": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "apps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "release_path", "mode", "install_path", "app_url"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "release_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["fresh", "upgrade", "repair", "preflight"]
+          },
+          "install_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "public_path": {
+            "type": "string"
+          },
+          "app_url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "config": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

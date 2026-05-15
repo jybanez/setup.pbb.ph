@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "app": "pbb-stub",
+  "name": "PBB Stub App",
+  "version": "0.1.0",
+  "display_version": "v0-0.1.0",
+  "release_date": "2026-05-15",
+  "release_name": "Kit Setup Harness",
+  "type": "stub",
+  "requires": {
+    "os": ["windows", "linux"],
+    "php": ">=8.2",
+    "php_extensions": ["json"]
+  },
+  "installer": {
+    "interactive": "installer/index.php",
+    "unattended": "installer/install-run.php",
+    "status": "installer/status.php",
+    "schema": "installer/schema/install.schema.json"
+  },
+  "health": {
+    "status": "/api/status"
+  },
+  "services": []
+}

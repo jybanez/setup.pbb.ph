@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "kit": {
+    "node_id": "local-dev-node",
+    "timezone": "Asia/Manila",
+    "install_root": "C:\\wamp64\\www\\pbb",
+    "run_root": "C:\\wamp64\\www\\pbb\\kit-setup\\storage\\runs",
+    "operator": "kit-setup-local"
+  },
+  "runtime": {
+    "php_binary": "C:\\wamp64\\bin\\php\\php8.2.29\\php.exe",
+    "service_manager": "windows-service",
+    "service_registration_mode": "generate"
+  },
+  "shared": {
+    "admin": {
+      "strategy": "create_if_missing",
+      "name": "PBB Administrator",
+      "email": "admin@pbb.local",
+      "password": "REPLACE_WITH_STRONG_PASSWORD_BEFORE_RUNNING",
+      "must_change_password": false,
+      "overwrite_existing": false
+    },
+    "database": {
+      "driver": "mysql",
+      "host": "127.0.0.1",
+      "port": 3306,
+      "username": "root",
+      "password": ""
+    },
+    "dependencies": {
+      "maestro": {
+        "base_url": "http://localhost/pbb/maestro/public",
+        "app_code": "kit-setup",
+        "telemetry_token": "REPLACE_WITH_MAESTRO_TELEMETRY_TOKEN"
+      },
+      "realtime": {
+        "base_url": "http://localhost/pbb/realtime/public",
+        "websocket_url": "ws://127.0.0.1:8080/realtime"
+      },
+      "relay": {
+        "base_url": "http://localhost/pbb/relay/public"
+      },
+      "mapserver": {
+        "base_url": "http://localhost/mapserver"
+      }
+    },
+    "secrets": {
+      "policy": "kit-provided",
+      "values": {
+        "mapserver_purge_token": "REPLACE_WITH_MAPSERVER_PURGE_TOKEN",
+        "realtime_backend_ingress_secret": "REPLACE_WITH_REALTIME_BACKEND_SECRET",
+        "relay_shared_secret": "REPLACE_WITH_RELAY_SHARED_SECRET"
+      }
+    }
+  },
+  "apps": [
+    {
+      "id": "pbb-mapserver",
+      "enabled": true,
+      "release_path": "C:\\wamp64\\www\\mapserver",
+      "mode": "repair",
+      "install_path": "C:\\wamp64\\www\\mapserver",
+      "public_path": "C:\\wamp64\\www\\mapserver",
+      "app_url": "http://localhost/mapserver",
+      "depends_on": [],
+      "config": {
+        "mapserver": {
+          "cache_root": "C:\\wamp64\\www\\mapserver\\storage\\tiles",
+          "log_file": "C:\\wamp64\\www\\mapserver\\storage\\logs\\tiles.log",
+          "purge_token": "REPLACE_WITH_MAPSERVER_PURGE_TOKEN",
+          "raster_base_url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+          "vector_base_url": "https://tiles.example.test/{z}/{x}/{y}.pbf",
+          "glyphs_base_url": "https://tiles.example.test/fonts/{fontstack}/{range}.pbf",
+          "terrain_base_url": "https://terrain.example.test/{z}/{x}/{y}.png",
+          "poi_base_url": "https://poi.example.test/{z}/{x}/{y}.pbf",
+          "curl_ssl_verify": true,
+          "populate": {
+            "enabled": false,
+            "center": "10.3157,123.8854",
+            "radius_km": 1,
+            "zooms": "12-14",
+            "types": "raster",
+            "max_tiles": 250,
+            "dry_run": true
+          }
+        }
+      }
+    },
+    {
+      "id": "pbb-maestro",
+      "enabled": true,
+      "release_path": "C:\\wamp64\\www\\pbb\\maestro",
+      "mode": "repair",
+      "install_path": "C:\\wamp64\\www\\pbb\\maestro",
+      "public_path": "C:\\wamp64\\www\\pbb\\maestro\\public",
+      "app_url": "http://localhost/pbb/maestro/public",
+      "depends_on": [],
+      "database": {
+        "driver": "mysql",
+        "host": "127.0.0.1",
+        "port": 3306,
+        "database": "pbb_maestro",
+        "username": "root",
+        "password": ""
+      },
+      "config": {
+        "maestro": {
+          "starting_threshold_seconds": 15,
+          "stale_threshold_seconds": 45,
+          "clock_skew_threshold_seconds": 60,
+          "telemetry_token_header": "X-Telemetry-Token",
+          "telemetry_trace": false,
+          "populate": {
+            "enabled": false,
+            "applications": [
+              {
+                "app_code": "relay",
+                "display_name": "PBB Relay",
+                "environment": "local",
+                "base_url": "http://localhost/pbb/relay/public",
+                "is_active": true
+              },
+              {
+                "app_code": "realtime",
+                "display_name": "PBB Realtime",
+                "environment": "local",
+                "base_url": "http://localhost/pbb/realtime/public",
+                "is_active": true
+              }
+            ],
+            "options": {
+              "overwrite_existing": false,
+              "deactivate_missing": false,
+              "dry_run": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "pbb-realtime",
+      "enabled": true,
+      "release_path": "C:\\wamp64\\www\\pbb\\realtime",
+      "mode": "repair",
+      "install_path": "C:\\wamp64\\www\\pbb\\realtime",
+      "public_path": "C:\\wamp64\\www\\pbb\\realtime\\public",
+      "app_url": "http://localhost/pbb/realtime/public",
+      "depends_on": ["pbb-maestro"],
+      "database": {
+        "driver": "mysql",
+        "host": "127.0.0.1",
+        "port": 3306,
+        "database": "pbb_realtime",
+        "username": "root",
+        "password": ""
+      },
+      "config": {
+        "realtime": {
+          "service_name": "PBB Realtime Local",
+          "token_audience": "pbb-realtime",
+          "token_signing_secret": "REPLACE_WITH_REALTIME_TOKEN_SECRET",
+          "trusted_issuers": ["localhost"],
+          "public_websocket_url": "ws://127.0.0.1:8080/realtime",
+          "ws_bind_address": "127.0.0.1",
+          "ws_port": 8080,
+          "allowed_origins": ["http://localhost"],
+          "populate": {
+            "enabled": false,
+            "options": {
+              "overwrite_secrets": false,
+              "dry_run": true
+            },
+            "clients": []
+          }
+        }
+      }
+    },
+    {
+      "id": "pbb-relay",
+      "enabled": true,
+      "release_path": "C:\\wamp64\\www\\pbb\\relay",
+      "mode": "repair",
+      "install_path": "C:\\wamp64\\www\\pbb\\relay",
+      "public_path": "C:\\wamp64\\www\\pbb\\relay\\public",
+      "app_url": "http://localhost/pbb/relay/public",
+      "depends_on": ["pbb-maestro"],
+      "database": {
+        "driver": "mysql",
+        "host": "127.0.0.1",
+        "port": 3306,
+        "database": "pbb_relay",
+        "username": "root",
+        "password": ""
+      },
+      "config": {
+        "relay": {
+          "hub_id": "local-dev-node",
+          "hq_api_base_url": "https://hub.pbb.ph",
+          "targets": [],
+          "maestro_enabled": true
+        }
+      }
+    },
+    {
+      "id": "pbb-hotline",
+      "enabled": true,
+      "release_path": "C:\\wamp64\\www\\pbb\\hotline",
+      "mode": "repair",
+      "install_path": "C:\\wamp64\\www\\pbb\\hotline",
+      "public_path": "C:\\wamp64\\www\\pbb\\hotline\\public",
+      "app_url": "http://localhost/pbb/hotline/public",
+      "depends_on": ["pbb-realtime", "pbb-mapserver", "pbb-relay", "pbb-maestro"],
+      "database": {
+        "driver": "mysql",
+        "host": "127.0.0.1",
+        "port": 3306,
+        "database": "pbb_hotline",
+        "username": "root",
+        "password": ""
+      },
+      "config": {
+        "hotline": {
+          "citizen_session_lifetime": 43200,
+          "media_assembly_token": "REPLACE_WITH_HOTLINE_MEDIA_ASSEMBLY_TOKEN",
+          "ffmpeg_binary": "C:\\Program Files\\Jellyfin\\Server\\ffmpeg.exe",
+          "ffprobe_binary": "C:\\Program Files\\Jellyfin\\Server\\ffprobe.exe",
+          "realtime_url": "http://localhost/pbb/realtime/public",
+          "realtime_client_code": "clt_HOTLINE_LOCAL",
+          "realtime_project_code_server": "prj_HOTLINE_SERVER_LOCAL",
+          "realtime_project_code_citizen": "prj_HOTLINE_CITIZEN_LOCAL",
+          "realtime_project_code_operator": "prj_HOTLINE_OPERATOR_LOCAL",
+          "realtime_project_code_command": "prj_HOTLINE_COMMAND_LOCAL",
+          "realtime_project_code_media_ingest": "prj_HOTLINE_MEDIA_LOCAL",
+          "realtime_backend_ingress_secret": "REPLACE_WITH_REALTIME_BACKEND_SECRET",
+          "realtime_media_ingest_secret": "REPLACE_WITH_REALTIME_MEDIA_INGEST_SECRET",
+          "realtime_token_signing_secret": "REPLACE_WITH_REALTIME_TOKEN_SECRET",
+          "relay_url": "http://localhost/pbb/relay/public",
+          "relay_token": "REPLACE_WITH_RELAY_SHARED_SECRET",
+          "map_server_url": "http://localhost/mapserver",
+          "sitrep_enabled": true,
+          "populate": {
+            "enabled": false,
+            "sources": {},
+            "options": {
+              "overwrite_existing": false,
+              "include_demo_data": false,
+              "dry_run": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}
