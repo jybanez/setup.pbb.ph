@@ -24,6 +24,7 @@
       "schema/**/*",
       "examples/**/*",
       "assets/branding/**/*",
+      "assets/certs/**/*",
       "packages/**/*",
       "fixtures/package-signing/**/*",
       "docs/app-installer-template.md",

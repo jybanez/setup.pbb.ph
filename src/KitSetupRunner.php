@@ -1402,6 +1402,7 @@ final class KitSetupRunner
                 'ignore_errors' => true,
                 'timeout' => 30,
             ],
+            'ssl' => $this->tlsOptions(),
         ]);
 
         $responseBody = file_get_contents($url, false, $context);
@@ -2799,10 +2800,7 @@ final class KitSetupRunner
                 'ignore_errors' => true,
                 'header' => implode("\r\n", $headerLines) . "\r\n",
             ],
-            'ssl' => [
-                'verify_peer' => true,
-                'verify_peer_name' => true,
-            ],
+            'ssl' => $this->tlsOptions(),
         ]);
         $body = @file_get_contents($url, false, $context);
         $headers = $http_response_header ?? [];
@@ -2997,6 +2995,7 @@ final class KitSetupRunner
                 'ignore_errors' => true,
                 'timeout' => 30,
             ],
+            'ssl' => $this->tlsOptions(),
         ]);
 
         $body = file_get_contents($url, false, $context);
@@ -3034,6 +3033,25 @@ final class KitSetupRunner
             }
         }
         return 0;
+    }
+
+    private function tlsOptions(): array
+    {
+        $options = [
+            'verify_peer' => true,
+            'verify_peer_name' => true,
+        ];
+        $caFile = $this->bundledCaFile();
+        if ($caFile !== '') {
+            $options['cafile'] = $caFile;
+        }
+        return $options;
+    }
+
+    private function bundledCaFile(): string
+    {
+        $path = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'certs' . DIRECTORY_SEPARATOR . 'cacert.pem';
+        return is_file($path) ? $path : '';
     }
 
     private function applyHubRecordToConfig(array $config, array $hub, string $baseUrl, int $hubId): array
