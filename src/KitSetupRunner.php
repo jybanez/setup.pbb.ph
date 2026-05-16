@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.9';
+    private const VERSION = '0.1.10';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.9';
+    private const DISPLAY_VERSION = 'v1-0.1.10';
 
     public function main(array $argv): int
     {
@@ -1316,6 +1316,9 @@ final class KitSetupRunner
             'update_mode' => $mode,
             'target_nameserver' => $target,
             'interface_alias' => $interfaceAlias !== '' ? $interfaceAlias : null,
+            'requires_admin' => true,
+            'is_elevated' => null,
+            'available_interfaces' => [],
             'before' => null,
             'after' => null,
             'warnings' => [],
@@ -1364,6 +1367,16 @@ final class KitSetupRunner
             if ($stdout !== '') {
                 $report['errors'][] = $stdout;
             }
+            $report['finished_at'] = date(DATE_ATOM);
+            return $report;
+        }
+
+        $report['is_elevated'] = $decoded['is_elevated'] ?? null;
+        $report['available_interfaces'] = $decoded['available_interfaces'] ?? [];
+
+        if (($decoded['status'] ?? '') === 'failed') {
+            $report['status'] = 'failed';
+            $report['errors'][] = (string) ($decoded['error'] ?? 'Windows DNS client update failed.');
             $report['finished_at'] = date(DATE_ATOM);
             return $report;
         }
@@ -1477,6 +1490,37 @@ final class KitSetupRunner
 $ErrorActionPreference = 'Stop'
 $target = '__TARGET__'
 $requestedAlias = '__ALIAS__'
+$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+$isElevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$availableInterfaces = @(
+    Get-NetIPConfiguration |
+        Where-Object { $_.NetAdapter.Status -eq 'Up' -and $_.IPv4Address } |
+        ForEach-Object {
+            $dnsServers = @()
+            try {
+                $dnsServers = @(Get-DnsClientServerAddress -InterfaceAlias $_.InterfaceAlias -AddressFamily IPv4 -ErrorAction Stop).ServerAddresses
+            } catch {
+                $dnsServers = @()
+            }
+            [ordered]@{
+                interface_alias = $_.InterfaceAlias
+                interface_index = $_.InterfaceIndex
+                status = $_.NetAdapter.Status
+                ipv4 = @($_.IPv4Address | ForEach-Object { $_.IPAddress })
+                gateway = @($_.IPv4DefaultGateway | ForEach-Object { $_.NextHop })
+                dns_servers = $dnsServers
+            }
+        }
+)
+if (-not $isElevated) {
+    [ordered]@{
+        status = 'failed'
+        error = 'Kit Setup is not running as Administrator. Windows DNS settings require elevated permissions.'
+        is_elevated = $false
+        available_interfaces = $availableInterfaces
+    } | ConvertTo-Json -Depth 6
+    exit 0
+}
 if ($requestedAlias -ne '') {
     $adapter = Get-NetAdapter -Name $requestedAlias -ErrorAction Stop
 } else {
@@ -1494,6 +1538,9 @@ $before = @(Get-DnsClientServerAddress -InterfaceAlias $adapter.InterfaceAlias -
 Set-DnsClientServerAddress -InterfaceAlias $adapter.InterfaceAlias -ServerAddresses $target
 $after = @(Get-DnsClientServerAddress -InterfaceAlias $adapter.InterfaceAlias -AddressFamily IPv4).ServerAddresses
 [ordered]@{
+    status = 'success'
+    is_elevated = $true
+    available_interfaces = $availableInterfaces
     interface_alias = $adapter.InterfaceAlias
     interface_index = $adapter.ifIndex
     before = $before
