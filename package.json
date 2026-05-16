@@ -1,13 +1,13 @@
 {
   "name": "pbb-kit-setup",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "description": "Project Bantay Bayan setup desktop installer shell",
   "main": "desktop/main.js",
   "pbb": {
     "milestone": 1,
-    "buildVersion": "0.1.10",
-    "displayVersion": "v1-0.1.10"
+    "buildVersion": "0.1.11",
+    "displayVersion": "v1-0.1.11"
   },
   "scripts": {
     "desktop": "electron .",

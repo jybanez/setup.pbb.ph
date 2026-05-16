@@ -58,6 +58,7 @@ function applyKitOwnedPaths(config, repoRoot, userDataPath, basePath) {
   setNestedValue(config, ['packages', 'base_path'], packagesRoot);
   setNestedValue(config, ['packages', 'manifest_path'], packageManifest);
   setNestedValue(config, ['packages', 'dry_run'], false);
+  setNestedValue(config, ['packages', 'max_parallel'], 3);
 }
 
 function normalizeAppScopes(appScopes) {

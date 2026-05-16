@@ -214,6 +214,11 @@
         "signature_policy": {
           "type": "string",
           "enum": ["required", "warn", "disabled"]
+        },
+        "max_parallel": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
         }
       },
       "additionalProperties": true

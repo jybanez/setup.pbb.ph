@@ -82,7 +82,8 @@
     "base_path": "C:\\wamp64\\www\\pbb\\kit-setup\\packages",
     "manifest_path": "C:\\wamp64\\www\\pbb\\kit-setup\\packages\\packages.local.example.json",
     "dry_run": true,
-    "signature_policy": "warn"
+    "signature_policy": "warn",
+    "max_parallel": 3
   },
   "domains": {
     "zone": "pbb.ph",

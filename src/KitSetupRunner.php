@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.10';
+    private const VERSION = '0.1.11';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.10';
+    private const DISPLAY_VERSION = 'v1-0.1.11';
 
     public function main(array $argv): int
     {
@@ -24,7 +24,7 @@ final class KitSetupRunner
             }
 
             $action = (string) ($options['action'] ?? 'plan');
-            if (!in_array($action, ['detect', 'hub-resolve', 'prepare-packages', 'dns-plan', 'dns-apply', 'dns-client-apply', 'dns-verify', 'ssl-plan', 'ssl-apply', 'remote-check', 'smoke-check', 'stage-report', 'finish-report', 'plan', 'preflight', 'install', 'populate'], true)) {
+            if (!in_array($action, ['detect', 'hub-resolve', 'prepare-packages', 'prepare-package-worker', 'dns-plan', 'dns-apply', 'dns-client-apply', 'dns-verify', 'ssl-plan', 'ssl-apply', 'remote-check', 'smoke-check', 'stage-report', 'finish-report', 'plan', 'preflight', 'install', 'populate'], true)) {
                 throw new InvalidArgumentException('Unsupported --action. Use detect, hub-resolve, prepare-packages, dns-plan, dns-apply, dns-client-apply, dns-verify, ssl-plan, ssl-apply, remote-check, smoke-check, stage-report, finish-report, plan, preflight, install, or populate.');
             }
 
@@ -84,6 +84,17 @@ final class KitSetupRunner
                 $this->recordCheckpoint($runDir, $context, $report, $reportPath);
                 $this->writeLine('Package preparation report: ' . $this->joinPath($runDir, 'package-report.json'));
                 return $report['status'] === 'success' || $report['status'] === 'warning' ? 0 : 1;
+            }
+
+            if ($action === 'prepare-package-worker') {
+                $appId = (string) ($options['app'] ?? '');
+                $reportPath = (string) ($options['worker-report'] ?? '');
+                if ($appId === '' || $reportPath === '') {
+                    throw new InvalidArgumentException('prepare-package-worker requires --app and --worker-report.');
+                }
+                $report = $this->runPackagePrepareWorker($config, $runDir, $context, $appId);
+                $this->writeJsonFile($reportPath, $report);
+                return ($report['status'] ?? '') === 'failed' ? 1 : 0;
             }
 
             if ($action === 'dns-plan') {
@@ -754,39 +765,15 @@ final class KitSetupRunner
         $entries = $this->normalizePackageEntries($manifest['packages'] ?? []);
         $selectedApps = $this->selectedLocalAppIds($config);
         $allowedTargetRoots = $this->packageTargetRoots($config);
+        $maxParallel = max(1, min(5, (int) ($packageConfig['max_parallel'] ?? 3)));
 
-        $results = [];
+        $totalApps = count($selectedApps);
+        $results = $maxParallel > 1 && $totalApps > 1
+            ? $this->runPackagePrepareParallel($config, $context, $selectedApps, $maxParallel)
+            : $this->runPackagePrepareSequential($config, $selectedApps, $entries, $manifestDir, $signaturePolicy, $dryRun, $runDir, $allowedTargetRoots, $requireBuildMetadata);
         $failed = false;
         $warning = false;
-        $totalApps = count($selectedApps);
-        foreach ($selectedApps as $index => $appId) {
-            $this->writeProgress('package', $appId, 'start', [
-                'index' => $index + 1,
-                'total' => $totalApps,
-                'message' => 'Preparing trusted package.',
-            ]);
-            $appConfig = $this->findAppConfig($config, $appId);
-            $entry = $entries[$appId] ?? null;
-            if (!is_array($entry)) {
-                $results[] = [
-                    'app_id' => $appId,
-                    'status' => 'failed',
-                    'message' => 'No trusted package manifest entry for selected app.',
-                ];
-                $failed = true;
-                $this->writeProgress('package', $appId, 'failed', [
-                    'index' => $index + 1,
-                    'total' => $totalApps,
-                    'message' => 'No trusted package manifest entry for selected app.',
-                ]);
-                continue;
-            }
-
-            $result = $this->preparePackageEntry($entry, $appConfig, $manifestDir, $signaturePolicy, $dryRun, $runDir, $allowedTargetRoots, $requireBuildMetadata, [
-                'index' => $index + 1,
-                'total' => $totalApps,
-            ]);
-            $results[] = $result;
+        foreach ($results as $result) {
             if (($result['status'] ?? '') === 'failed') {
                 $failed = true;
             } elseif (($result['status'] ?? '') === 'warning') {
@@ -807,9 +794,221 @@ final class KitSetupRunner
             'dry_run' => $dryRun,
             'signature_policy' => $signaturePolicy,
             'require_build_metadata' => $requireBuildMetadata,
+            'max_parallel' => $maxParallel,
             'selected_apps' => $selectedApps,
             'packages' => $results,
         ];
+    }
+
+    private function runPackagePrepareSequential(array $config, array $selectedApps, array $entries, string $manifestDir, string $signaturePolicy, bool $dryRun, string $runDir, array $allowedTargetRoots, bool $requireBuildMetadata): array
+    {
+        $results = [];
+        $totalApps = count($selectedApps);
+        foreach ($selectedApps as $index => $appId) {
+            $results[] = $this->prepareSinglePackage($config, $appId, $index + 1, $totalApps, $entries, $manifestDir, $signaturePolicy, $dryRun, $runDir, $allowedTargetRoots, $requireBuildMetadata);
+        }
+        return $results;
+    }
+
+    private function prepareSinglePackage(array $config, string $appId, int $index, int $totalApps, array $entries, string $manifestDir, string $signaturePolicy, bool $dryRun, string $runDir, array $allowedTargetRoots, bool $requireBuildMetadata): array
+    {
+        $this->writeProgress('package', $appId, 'start', [
+            'index' => $index,
+            'total' => $totalApps,
+            'message' => 'Preparing trusted package.',
+        ]);
+        $appConfig = $this->findAppConfig($config, $appId);
+        $entry = $entries[$appId] ?? null;
+        if (!is_array($entry)) {
+            $this->writeProgress('package', $appId, 'failed', [
+                'index' => $index,
+                'total' => $totalApps,
+                'message' => 'No trusted package manifest entry for selected app.',
+            ]);
+            return [
+                'app_id' => $appId,
+                'status' => 'failed',
+                'message' => 'No trusted package manifest entry for selected app.',
+            ];
+        }
+
+        return $this->preparePackageEntry($entry, $appConfig, $manifestDir, $signaturePolicy, $dryRun, $runDir, $allowedTargetRoots, $requireBuildMetadata, [
+            'index' => $index,
+            'total' => $totalApps,
+        ]);
+    }
+
+    private function runPackagePrepareWorker(array $config, string $runDir, array $context, string $appId): array
+    {
+        $packageConfig = is_array($config['packages'] ?? null) ? $config['packages'] : [];
+        $manifestPath = (string) ($packageConfig['manifest_path'] ?? '');
+        if ($manifestPath === '') {
+            $manifestPath = $this->joinPath((string) ($packageConfig['base_path'] ?? 'packages'), 'packages.json');
+        }
+        if (!$this->isAbsolutePath($manifestPath)) {
+            $manifestPath = $this->joinPath(getcwd(), $manifestPath);
+        }
+
+        $manifest = $this->readJsonFile($manifestPath);
+        $selectedApps = $this->selectedLocalAppIds($config);
+        $index = array_search($appId, $selectedApps, true);
+        return $this->prepareSinglePackage(
+            $config,
+            $appId,
+            $index === false ? 1 : $index + 1,
+            count($selectedApps),
+            $this->normalizePackageEntries($manifest['packages'] ?? []),
+            dirname($manifestPath),
+            (string) ($packageConfig['signature_policy'] ?? 'warn'),
+            ($packageConfig['dry_run'] ?? true) !== false,
+            $runDir,
+            $this->packageTargetRoots($config),
+            ($packageConfig['require_build_metadata'] ?? false) === true
+        );
+    }
+
+    private function runPackagePrepareParallel(array $config, array $context, array $selectedApps, int $maxParallel): array
+    {
+        $queue = $this->packageWorkerQueue($selectedApps);
+        $active = [];
+        $resultsByApp = [];
+        $workerDir = $this->joinPath((string) $context['run_dir'], 'package-workers');
+        $this->ensureDirectory($workerDir);
+
+        while (count($queue) > 0 || count($active) > 0) {
+            while (count($queue) > 0 && count($active) < $maxParallel) {
+                $appId = array_shift($queue);
+                if (!is_string($appId) || $appId === '') {
+                    continue;
+                }
+                $active[$appId] = $this->startPackageWorker($context, $appId, $this->joinPath($workerDir, $appId . '.json'));
+            }
+
+            foreach (array_keys($active) as $appId) {
+                $worker = $active[$appId];
+                $this->drainWorkerPipe($worker, 'stdout');
+                $this->drainWorkerPipe($worker, 'stderr');
+                $status = proc_get_status($worker['process']);
+                if (($status['running'] ?? false) === true) {
+                    $active[$appId] = $worker;
+                    continue;
+                }
+
+                $this->drainWorkerPipe($worker, 'stdout');
+                $this->drainWorkerPipe($worker, 'stderr');
+                foreach ($worker['pipes'] as $pipe) {
+                    if (is_resource($pipe)) {
+                        fclose($pipe);
+                    }
+                }
+                $exitCode = proc_close($worker['process']);
+                $result = $this->readOptionalJson($worker['report_path']);
+                if (!is_array($result)) {
+                    $result = [
+                        'app_id' => $appId,
+                        'status' => 'failed',
+                        'message' => 'Package worker did not write a report.',
+                        'exit_code' => $exitCode,
+                    ];
+                }
+                if ($exitCode !== 0 && ($result['status'] ?? '') !== 'failed') {
+                    $result['status'] = 'failed';
+                    $result['message'] = 'Package worker exited with code ' . $exitCode . '.';
+                }
+                $resultsByApp[$appId] = $result;
+                unset($active[$appId]);
+            }
+
+            if (count($active) > 0) {
+                usleep(100000);
+            }
+        }
+
+        $ordered = [];
+        foreach ($selectedApps as $appId) {
+            $ordered[] = $resultsByApp[$appId] ?? [
+                'app_id' => $appId,
+                'status' => 'failed',
+                'message' => 'Package worker result was missing.',
+            ];
+        }
+        return $ordered;
+    }
+
+    private function packageWorkerQueue(array $selectedApps): array
+    {
+        $preferred = ['pbb-hotline', 'pbb-maestro', 'pbb-realtime', 'pbb-relay', 'pbb-mapserver'];
+        $queue = [];
+        foreach ($preferred as $appId) {
+            if (in_array($appId, $selectedApps, true)) {
+                $queue[] = $appId;
+            }
+        }
+        foreach ($selectedApps as $appId) {
+            if (!in_array($appId, $queue, true)) {
+                $queue[] = $appId;
+            }
+        }
+        return $queue;
+    }
+
+    private function startPackageWorker(array $context, string $appId, string $reportPath): array
+    {
+        $script = (string) ($_SERVER['SCRIPT_FILENAME'] ?? '');
+        if ($script === '') {
+            throw new RuntimeException('Unable to locate current runner script for package worker.');
+        }
+        $command = [
+            PHP_BINARY,
+            $script,
+            '--config',
+            (string) $context['config_path'],
+            '--action',
+            'prepare-package-worker',
+            '--run-id',
+            (string) $context['run_id'],
+            '--run-dir',
+            (string) $context['run_dir'],
+            '--app',
+            $appId,
+            '--worker-report',
+            $reportPath,
+        ];
+        $descriptorSpec = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+        $process = proc_open(implode(' ', array_map([$this, 'escapeArg'], $command)), $descriptorSpec, $pipes, (string) getcwd());
+        if (!is_resource($process)) {
+            throw new RuntimeException('Unable to start package worker for ' . $appId);
+        }
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+        return [
+            'process' => $process,
+            'pipes' => $pipes,
+            'report_path' => $reportPath,
+        ];
+    }
+
+    private function drainWorkerPipe(array $worker, string $name): void
+    {
+        $index = $name === 'stderr' ? 2 : 1;
+        $pipe = $worker['pipes'][$index] ?? null;
+        if (!is_resource($pipe)) {
+            return;
+        }
+        $chunk = stream_get_contents($pipe);
+        if ($chunk === false || $chunk === '') {
+            return;
+        }
+        if ($name === 'stderr') {
+            fwrite(STDERR, $chunk);
+        } else {
+            echo $chunk;
+        }
     }
 
     private function normalizePackageEntries($packages): array

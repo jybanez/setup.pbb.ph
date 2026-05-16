@@ -310,7 +310,7 @@ Signed archive entries use detached OpenSSL SHA-256 signatures:
 
 `prepare-packages` writes `package-report.json` with the selected apps, trusted source path, target path, release metadata, checksum status, signature status, and extraction state. It fails if a selected local app has no manifest entry, is untrusted, has mismatched release metadata, or fails checksum verification.
 
-For archive packages with `packages.dry_run=false`, Kit Setup extracts the ZIP into `storage/runs/{run-id}/packages/{app}`, verifies `release.json` and `checksums.sha256` after extraction, backs up an existing target under `storage/runs/{run-id}/package-backups`, and copies the verified package into the target path. Deployment is refused when the target is outside the configured Kit install roots.
+For archive packages with `packages.dry_run=false`, Kit Setup extracts the ZIP into `storage/runs/{run-id}/packages/{app}`, verifies `release.json` and `checksums.sha256` after extraction, backs up an existing target under `storage/runs/{run-id}/package-backups`, and copies the verified package into the target path. Package work is bounded-parallel by default with `packages.max_parallel=3` and a hard cap of 5. Each app still uses its own staging/report path, and the parent `package-report.json` aggregates the per-app worker results. Deployment is refused when the target is outside the configured Kit install roots.
 
 ## DNS Plan
 
