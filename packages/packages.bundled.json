@@ -1,7 +1,7 @@
 {
     "schema_version":  1,
     "generated_for":  "Project Bantay Bayan bundled app packages",
-    "generated_at":  "2026-05-16T16:58:57.4767664Z",
+    "generated_at":  "2026-05-16T17:16:44.8644394Z",
     "packages":  [
                      {
                          "app_id":  "pbb-mapserver",
@@ -17,7 +17,7 @@
                          "version":  "1.0.0",
                          "source_type":  "zip",
                          "path":  "bundled/pbb-maestro-1.0.0.zip",
-                         "sha256":  "d69be735205c501ba6e25cbd2562dbb7b309ade79051fdc8c6631fe53804cc74",
+                         "sha256":  "33157c618da54a78ee7c63d97b9566435fe7f5e8b76f7192aa4393fa3b97c29f",
                          "trusted":  true,
                          "signature_status":  "local-trusted"
                      },

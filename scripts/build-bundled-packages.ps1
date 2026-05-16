@@ -11,7 +11,12 @@ $manifestFile = if ([System.IO.Path]::IsPathRooted($ManifestPath)) { $ManifestPa
 
 $apps = @(
     @{ id = "pbb-mapserver"; version = "1.0.0"; source = "C:\wamp64\www\mapserver" },
-    @{ id = "pbb-maestro"; version = "1.0.0"; source = "C:\wamp64\www\pbb\maestro" },
+    @{
+        id = "pbb-maestro"
+        version = "1.0.0"
+        source = "C:\wamp64\www\pbb\maestro"
+        artifact = "C:\wamp64\www\pbb\maestro\storage\app\installer-build\pbb-maestro-m1-1.0.0.zip"
+    },
     @{
         id = "pbb-realtime"
         version = "1.0.0"
