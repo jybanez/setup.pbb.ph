@@ -590,6 +590,110 @@ button:focus {
   padding: 12px;
 }
 
+.package-progress-grid {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.package-overall-progress {
+  padding: 14px 16px 4px;
+}
+
+.package-overall-progress .ui-progress {
+  --ui-progress-color: var(--primary);
+  --ui-progress-track: #e8eef5;
+  color: var(--text);
+}
+
+.package-progress-fallback {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eef5;
+}
+
+.package-progress-fallback span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 0.2s ease;
+}
+
+.package-progress-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 54px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.package-progress-row.running {
+  border-color: rgba(18, 112, 132, 0.45);
+}
+
+.package-progress-row.success {
+  border-color: rgba(35, 112, 72, 0.45);
+}
+
+.package-progress-row.warning {
+  border-color: rgba(163, 96, 24, 0.55);
+}
+
+.package-progress-row.failed {
+  border-color: rgba(160, 49, 49, 0.6);
+}
+
+.package-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--pending);
+}
+
+.package-progress-row.running .package-dot {
+  background: #127084;
+}
+
+.package-progress-row.success .package-dot {
+  background: var(--success);
+}
+
+.package-progress-row.warning .package-dot {
+  background: var(--warning);
+}
+
+.package-progress-row.failed .package-dot {
+  background: var(--danger);
+}
+
+.package-progress-copy {
+  min-width: 0;
+}
+
+.package-progress-copy strong,
+.package-progress-copy span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.package-progress-copy strong {
+  font-size: 13px;
+}
+
+.package-progress-copy span,
+.package-progress-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .app-retry-row {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) auto;

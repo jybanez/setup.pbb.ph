@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.4';
+    private const VERSION = '0.1.5';
 
     public function main(array $argv): int
     {
@@ -746,7 +746,13 @@ final class KitSetupRunner
         $results = [];
         $failed = false;
         $warning = false;
-        foreach ($selectedApps as $appId) {
+        $totalApps = count($selectedApps);
+        foreach ($selectedApps as $index => $appId) {
+            $this->writeProgress('package', $appId, 'start', [
+                'index' => $index + 1,
+                'total' => $totalApps,
+                'message' => 'Preparing trusted package.',
+            ]);
             $appConfig = $this->findAppConfig($config, $appId);
             $entry = $entries[$appId] ?? null;
             if (!is_array($entry)) {
@@ -756,10 +762,18 @@ final class KitSetupRunner
                     'message' => 'No trusted package manifest entry for selected app.',
                 ];
                 $failed = true;
+                $this->writeProgress('package', $appId, 'failed', [
+                    'index' => $index + 1,
+                    'total' => $totalApps,
+                    'message' => 'No trusted package manifest entry for selected app.',
+                ]);
                 continue;
             }
 
-            $result = $this->preparePackageEntry($entry, $appConfig, $manifestDir, $signaturePolicy, $dryRun, $runDir, $allowedTargetRoots);
+            $result = $this->preparePackageEntry($entry, $appConfig, $manifestDir, $signaturePolicy, $dryRun, $runDir, $allowedTargetRoots, [
+                'index' => $index + 1,
+                'total' => $totalApps,
+            ]);
             $results[] = $result;
             if (($result['status'] ?? '') === 'failed') {
                 $failed = true;
@@ -802,6 +816,16 @@ final class KitSetupRunner
             }
         }
         return $entries;
+    }
+
+    private function writeProgress(string $scope, string $appId, string $step, array $data = []): void
+    {
+        $payload = array_merge([
+            'scope' => $scope,
+            'app_id' => $appId,
+            'step' => $step,
+        ], $data);
+        $this->writeLine('PROGRESS: ' . json_encode($payload, JSON_UNESCAPED_SLASHES));
     }
 
     private function selectedLocalAppIds(array $config): array
@@ -856,9 +880,13 @@ final class KitSetupRunner
         return array_values(array_unique($roots));
     }
 
-    private function preparePackageEntry(array $entry, array $appConfig, string $manifestDir, string $signaturePolicy, bool $dryRun, string $runDir, array $allowedTargetRoots): array
+    private function preparePackageEntry(array $entry, array $appConfig, string $manifestDir, string $signaturePolicy, bool $dryRun, string $runDir, array $allowedTargetRoots, array $progress = []): array
     {
         $appId = (string) ($entry['app_id'] ?? $entry['id'] ?? $appConfig['id'] ?? '');
+        $progressBase = [
+            'index' => (int) ($progress['index'] ?? 0),
+            'total' => (int) ($progress['total'] ?? 0),
+        ];
         $sourceType = (string) ($entry['source_type'] ?? 'archive');
         $packagePath = (string) ($entry['path'] ?? '');
         $trusted = ($entry['trusted'] ?? false) === true;
@@ -895,6 +923,9 @@ final class KitSetupRunner
         $backupPath = null;
         $targetPrepared = false;
         if ($sourceType === 'directory' && is_dir($packagePath)) {
+            $this->writeProgress('package', $appId, 'validate', $progressBase + [
+                'message' => 'Validating release folder.',
+            ]);
             $releasePath = $this->joinPath($packagePath, 'release.json');
             if (is_file($releasePath)) {
                 $release = $this->readJsonFile($releasePath);
@@ -904,6 +935,9 @@ final class KitSetupRunner
             }
         } elseif ($sourceType === 'zip' || $sourceType === 'archive') {
             if (is_file($packagePath)) {
+                $this->writeProgress('package', $appId, 'hash', $progressBase + [
+                    'message' => 'Checking package SHA-256.',
+                ]);
                 $archiveSha256 = hash_file('sha256', $packagePath);
                 $expectedSha256 = (string) ($entry['sha256'] ?? '');
                 if ($expectedSha256 !== '' && strtolower($expectedSha256) !== strtolower((string) $archiveSha256)) {
@@ -913,10 +947,16 @@ final class KitSetupRunner
                     if ($dryRun) {
                         $stagingPath = $this->joinPath($runDir, 'packages', $appId);
                     } else {
+                        $this->writeProgress('package', $appId, 'extract', $progressBase + [
+                            'message' => 'Extracting package to staging.',
+                        ]);
                         $extracted = $this->extractPackageArchive($packagePath, $runDir, $appId);
                         $stagingPath = $extracted['staging_path'];
                         $releasePath = $this->joinPath($stagingPath, 'release.json');
                         if (is_file($releasePath)) {
+                            $this->writeProgress('package', $appId, 'verify', $progressBase + [
+                                'message' => 'Verifying release metadata and checksums.',
+                            ]);
                             $release = $this->readJsonFile($releasePath);
                             $checksum = $this->verifyChecksumsForPath($stagingPath);
                         } else {
@@ -953,6 +993,9 @@ final class KitSetupRunner
 
         if (!$dryRun && $status !== 'failed' && is_string($stagingPath) && $stagingPath !== '') {
             try {
+                $this->writeProgress('package', $appId, 'deploy', $progressBase + [
+                    'message' => 'Copying package into selected base path.',
+                ]);
                 $deploy = $this->deployStagedPackage($stagingPath, $targetPath, $runDir, $appId, $allowedTargetRoots);
                 $backupPath = $deploy['backup_path'];
                 $targetPrepared = true;
@@ -961,6 +1004,11 @@ final class KitSetupRunner
                 $errors[] = $e->getMessage();
             }
         }
+
+        $this->writeProgress('package', $appId, $status === 'failed' ? 'failed' : 'complete', $progressBase + [
+            'message' => $status === 'failed' ? implode(' ', $errors) : 'Package is ready.',
+            'status' => $status,
+        ]);
 
         return [
             'app_id' => $appId,

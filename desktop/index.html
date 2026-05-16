@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Project Bantay Bayan Setup</title>
+    <link rel="stylesheet" href="../assets/helpers.pbb.ph/dist/helpers.ui.bundle.min.css">
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
@@ -215,6 +216,15 @@
             <span>Use after preflight, install, or data preparation reports</span>
           </div>
           <div class="app-retry-grid" id="appRetryGrid"></div>
+        </section>
+
+        <section class="package-progress-panel" id="packageProgressPanel" aria-label="Package progress" data-theme="light" hidden>
+          <div class="resume-header">
+            <span>Package Preparation</span>
+            <span id="packageProgressSummary">Waiting</span>
+          </div>
+          <div class="package-overall-progress" id="packageOverallProgress"></div>
+          <div class="package-progress-grid" id="packageProgressGrid"></div>
         </section>
 
         <section class="finish-panel" aria-label="Finish summary">

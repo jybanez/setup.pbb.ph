@@ -140,7 +140,7 @@ ipcMain.handle('kit:describe-action', async (_event, request) => {
   return describeAction(action, config);
 });
 
-ipcMain.handle('kit:run-action', async (_event, request) => {
+ipcMain.handle('kit:run-action', async (event, request) => {
   const action = String(request.action || '');
   const allowedActions = new Set([
     'detect',
@@ -183,7 +183,20 @@ ipcMain.handle('kit:run-action', async (_event, request) => {
   }
 
   const resolvedPhpPath = resolvePhpForRun(phpPath);
-  const processResult = await runProcess(resolvedPhpPath, args, env);
+  const processResult = await runProcess(resolvedPhpPath, args, env, {
+    onStdout: (text) => {
+      if (!event || !event.sender || event.sender.isDestroyed()) {
+        return;
+      }
+      event.sender.send('kit:runner-output', { action, stream: 'stdout', text });
+    },
+    onStderr: (text) => {
+      if (!event || !event.sender || event.sender.isDestroyed()) {
+        return;
+      }
+      event.sender.send('kit:runner-output', { action, stream: 'stderr', text });
+    }
+  });
   const reportPath = getReportPath(configPath, runId, action);
   const report = readJsonIfExists(reportPath);
   const checkpointPath = getCheckpointPath(configPath, runId);
@@ -372,7 +385,7 @@ function describeAction(action, config) {
   };
 }
 
-function runProcess(command, args, env) {
+function runProcess(command, args, env, hooks = {}) {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd: repoRoot,
@@ -383,10 +396,18 @@ function runProcess(command, args, env) {
     let stderr = '';
 
     child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      if (typeof hooks.onStdout === 'function') {
+        hooks.onStdout(text);
+      }
     });
     child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
+      if (typeof hooks.onStderr === 'function') {
+        hooks.onStderr(text);
+      }
     });
     child.on('error', (error) => {
       resolve({

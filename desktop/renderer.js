@@ -3,7 +3,12 @@ const state = {
   selectedStageIndex: 0,
   busy: false,
   templateConfigPath: '',
-  pendingConfirmedAction: null
+  pendingConfirmedAction: null,
+  activeAction: null,
+  packageProgress: new Map(),
+  packageProgressWidget: null,
+  helperProgressFactory: null,
+  helperProgressLoad: null
 };
 
 const elements = {
@@ -44,6 +49,10 @@ const elements = {
   checkpointPath: document.getElementById('checkpointPath'),
   checkpointGrid: document.getElementById('checkpointGrid'),
   appRetryGrid: document.getElementById('appRetryGrid'),
+  packageProgressPanel: document.getElementById('packageProgressPanel'),
+  packageProgressSummary: document.getElementById('packageProgressSummary'),
+  packageOverallProgress: document.getElementById('packageOverallProgress'),
+  packageProgressGrid: document.getElementById('packageProgressGrid'),
   finishStatus: document.getElementById('finishStatus'),
   finishContent: document.getElementById('finishContent'),
   detailStep: document.getElementById('detailStep'),
@@ -107,6 +116,14 @@ window.addEventListener('DOMContentLoaded', async () => {
   renderAppScopeControls();
   setStages(fallbackStages);
   bindEvents();
+  loadHelperProgressFactory().then(() => {
+    if (!elements.packageProgressPanel.hidden) {
+      renderPackageProgress();
+    }
+  });
+  if (window.kitSetup.onRunnerOutput) {
+    window.kitSetup.onRunnerOutput(handleRunnerOutput);
+  }
 });
 
 function applyLaunchMode(mode) {
@@ -292,6 +309,10 @@ async function runAction(action, options = {}) {
   }
 
   state.busy = true;
+  state.activeAction = action;
+  if (action === 'prepare-packages') {
+    resetPackageProgress();
+  }
   setBusy(true);
   appendOutput(`Running ${action}...`);
 
@@ -310,8 +331,181 @@ async function runAction(action, options = {}) {
     appendOutput(`ERROR: ${error.message}`);
   } finally {
     state.busy = false;
+    state.activeAction = null;
     setBusy(false);
   }
+}
+
+function handleRunnerOutput(payload) {
+  if (!payload || payload.action !== state.activeAction) {
+    return;
+  }
+  const text = String(payload.text || '');
+  if (text.trim() === '') {
+    return;
+  }
+  appendOutput(text.trimEnd());
+  parseProgressLines(text);
+}
+
+function parseProgressLines(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('PROGRESS:')) {
+      continue;
+    }
+    try {
+      const payload = JSON.parse(trimmed.slice('PROGRESS:'.length).trim());
+      if (payload.scope === 'package') {
+        updatePackageProgress(payload);
+      }
+    } catch (_error) {
+      // Ignore malformed progress lines; final reports still carry authoritative state.
+    }
+  }
+}
+
+function resetPackageProgress() {
+  state.packageProgressWidget?.destroy?.();
+  state.packageProgressWidget = null;
+  state.packageProgress = new Map();
+  for (const [appId, label] of appOptions) {
+    state.packageProgress.set(appId, {
+      app_id: appId,
+      label,
+      step: 'pending',
+      status: 'pending',
+      message: 'Waiting for package preparation.'
+    });
+  }
+  renderPackageProgress();
+}
+
+function updatePackageProgress(payload) {
+  const appId = String(payload.app_id || '');
+  if (!appId) {
+    return;
+  }
+  const current = state.packageProgress.get(appId) || { app_id: appId, label: appId };
+  state.packageProgress.set(appId, {
+    ...current,
+    ...payload,
+    status: payload.status || progressStatusForStep(payload.step),
+    message: payload.message || progressLabelForStep(payload.step)
+  });
+  renderPackageProgress();
+}
+
+function progressStatusForStep(step) {
+  if (step === 'complete') {
+    return 'success';
+  }
+  if (step === 'failed') {
+    return 'failed';
+  }
+  if (['hash', 'extract', 'verify', 'deploy', 'validate', 'start'].includes(step)) {
+    return 'running';
+  }
+  return 'pending';
+}
+
+function progressLabelForStep(step) {
+  const labels = {
+    start: 'Preparing trusted package.',
+    hash: 'Checking package SHA-256.',
+    extract: 'Extracting package to staging.',
+    verify: 'Verifying release metadata and checksums.',
+    deploy: 'Copying package into selected base path.',
+    complete: 'Package is ready.',
+    failed: 'Package preparation failed.'
+  };
+  return labels[step] || 'Waiting for package preparation.';
+}
+
+function loadHelperProgressFactory() {
+  if (state.helperProgressFactory) {
+    return Promise.resolve(state.helperProgressFactory);
+  }
+  if (state.helperProgressLoad) {
+    return state.helperProgressLoad;
+  }
+
+  const helperBundleUrl = new URL('../assets/helpers.pbb.ph/dist/helpers.ui.bundle.min.js', window.location.href).href;
+  state.helperProgressLoad = import(helperBundleUrl)
+    .then((module) => {
+      const factory = module?.helperUiBundleModules?.['./ui.progress.js']?.createProgress;
+      state.helperProgressFactory = typeof factory === 'function' ? factory : null;
+      return state.helperProgressFactory;
+    })
+    .catch(() => {
+      state.helperProgressFactory = null;
+      return null;
+    });
+  return state.helperProgressLoad;
+}
+
+function renderPackageProgress() {
+  elements.packageProgressPanel.hidden = false;
+  const packages = Array.from(state.packageProgress.values());
+  const done = packages.filter((item) => item.status === 'success' || item.status === 'failed').length;
+  const failed = packages.filter((item) => item.status === 'failed').length;
+  const running = packages.filter((item) => item.status === 'running').length;
+  const total = packages.length;
+  const progressLabel = failed > 0
+    ? `${done} of ${total} complete, ${failed} failed`
+    : running > 0
+      ? `${done} of ${total} complete, ${running} running`
+      : `${done} of ${total} complete`;
+  elements.packageProgressSummary.textContent = progressLabel;
+  renderHelperPackageProgress(done, total, progressLabel);
+  elements.packageProgressGrid.innerHTML = '';
+  for (const item of packages) {
+    const row = document.createElement('div');
+    row.className = `package-progress-row ${item.status || 'pending'}`;
+    row.innerHTML = `
+      <span class="package-dot" aria-hidden="true"></span>
+      <div class="package-progress-copy">
+        <strong>${escapeHtml(item.label || item.app_id)}</strong>
+        <span>${escapeHtml(item.message || '')}</span>
+      </div>
+      <small>${escapeHtml(item.step || 'pending')}</small>
+    `;
+    elements.packageProgressGrid.appendChild(row);
+  }
+}
+
+function renderHelperPackageProgress(done, total, label) {
+  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+  const data = {
+    label: 'Trusted package preparation',
+    value: percent
+  };
+  const options = {
+    style: 'segmented',
+    size: 'md',
+    showLabel: true,
+    showPercent: true,
+    segments: Math.max(5, total || 5),
+    ariaLabel: label
+  };
+
+  if (!state.helperProgressFactory) {
+    elements.packageOverallProgress.innerHTML = `
+      <div class="package-progress-fallback" role="progressbar" aria-label="${escapeHtml(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}">
+        <span style="width: ${percent}%"></span>
+      </div>
+    `;
+    return;
+  }
+
+  if (!state.packageProgressWidget) {
+    elements.packageOverallProgress.innerHTML = '';
+    state.packageProgressWidget = state.helperProgressFactory(elements.packageOverallProgress, data, options);
+    return;
+  }
+
+  state.packageProgressWidget.update(data, options);
 }
 
 async function buildRuntimeConfigForAction() {
@@ -376,7 +570,9 @@ function renderRunResult(result) {
     result.stdout,
     result.stderr ? `ERR: ${result.stderr}` : ''
   ].filter(Boolean).join('\n');
-  appendOutput(output || `${result.action} finished with exit code ${result.exitCode}`);
+  if (!output) {
+    appendOutput(`${result.action} finished with exit code ${result.exitCode}`);
+  }
   elements.reportPath.textContent = result.reportPath || '';
   renderCheckpoints(result.checkpoints, result.checkpointPath);
 
@@ -388,12 +584,50 @@ function renderRunResult(result) {
   }
 
   if (result.report) {
+    if (result.action === 'prepare-packages') {
+      renderPackageReport(result.report);
+    }
     renderAppRetry(result.report);
     if (result.action === 'finish-report') {
       renderFinishSummary(result.report);
     }
     renderGenericReport(result.action, result.report);
   }
+}
+
+function renderPackageReport(report) {
+  if (!report || !Array.isArray(report.packages)) {
+    return;
+  }
+  elements.packageProgressPanel.hidden = false;
+  state.packageProgressWidget?.destroy?.();
+  state.packageProgressWidget = null;
+  state.packageProgress = new Map();
+  for (const item of report.packages) {
+    const appId = item.app_id || '';
+    const option = appOptions.find(([id]) => id === appId);
+    state.packageProgress.set(appId, {
+      app_id: appId,
+      label: option ? option[1] : appId,
+      step: item.extraction || item.source_type || 'complete',
+      status: item.status || 'pending',
+      message: packageReportMessage(item)
+    });
+  }
+  renderPackageProgress();
+}
+
+function packageReportMessage(item) {
+  if ((item.errors || []).length > 0) {
+    return item.errors.join(' ');
+  }
+  if ((item.warnings || []).length > 0) {
+    return item.warnings.join(' ');
+  }
+  if (item.target_prepared) {
+    return `Ready at ${item.target_path || 'target path'}.`;
+  }
+  return 'Package is ready.';
 }
 
 function setStages(stages) {

@@ -1,6 +1,6 @@
 {
   "name": "pbb-kit-setup",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "Project Bantay Bayan setup desktop installer shell",
   "main": "desktop/main.js",
@@ -26,6 +26,7 @@
       "examples/**/*",
       "assets/branding/**/*",
       "assets/certs/**/*",
+      "assets/helpers.pbb.ph/**/*",
       "packages/**/*",
       "fixtures/package-signing/**/*",
       "docs/app-installer-template.md",
