@@ -5,6 +5,8 @@ declare(strict_types=1);
 final class KitSetupRunner
 {
     private const VERSION = '0.1.5';
+    private const MILESTONE = 1;
+    private const DISPLAY_VERSION = 'v1-0.1.5';
 
     public function main(array $argv): int
     {
@@ -737,6 +739,7 @@ final class KitSetupRunner
 
         $dryRun = ($packageConfig['dry_run'] ?? true) !== false;
         $signaturePolicy = (string) ($packageConfig['signature_policy'] ?? 'warn');
+        $requireBuildMetadata = ($packageConfig['require_build_metadata'] ?? false) === true;
         $manifest = $this->readJsonFile($manifestPath);
         $manifestDir = dirname($manifestPath);
         $entries = $this->normalizePackageEntries($manifest['packages'] ?? []);
@@ -770,7 +773,7 @@ final class KitSetupRunner
                 continue;
             }
 
-            $result = $this->preparePackageEntry($entry, $appConfig, $manifestDir, $signaturePolicy, $dryRun, $runDir, $allowedTargetRoots, [
+            $result = $this->preparePackageEntry($entry, $appConfig, $manifestDir, $signaturePolicy, $dryRun, $runDir, $allowedTargetRoots, $requireBuildMetadata, [
                 'index' => $index + 1,
                 'total' => $totalApps,
             ]);
@@ -794,6 +797,7 @@ final class KitSetupRunner
             'manifest_path' => $this->absolutePath($manifestPath),
             'dry_run' => $dryRun,
             'signature_policy' => $signaturePolicy,
+            'require_build_metadata' => $requireBuildMetadata,
             'selected_apps' => $selectedApps,
             'packages' => $results,
         ];
@@ -880,7 +884,7 @@ final class KitSetupRunner
         return array_values(array_unique($roots));
     }
 
-    private function preparePackageEntry(array $entry, array $appConfig, string $manifestDir, string $signaturePolicy, bool $dryRun, string $runDir, array $allowedTargetRoots, array $progress = []): array
+    private function preparePackageEntry(array $entry, array $appConfig, string $manifestDir, string $signaturePolicy, bool $dryRun, string $runDir, array $allowedTargetRoots, bool $requireBuildMetadata, array $progress = []): array
     {
         $appId = (string) ($entry['app_id'] ?? $entry['id'] ?? $appConfig['id'] ?? '');
         $progressBase = [
@@ -977,6 +981,18 @@ final class KitSetupRunner
             if ($expectedVersion !== '' && (string) ($release['version'] ?? '') !== $expectedVersion) {
                 $errors[] = 'release.json version does not match manifest version.';
             }
+            if ($requireBuildMetadata && !array_key_exists('milestone', $release)) {
+                $warnings[] = 'release.json does not declare milestone.';
+            }
+            if ($requireBuildMetadata && (!isset($release['build']) || !is_array($release['build']))) {
+                $warnings[] = 'release.json does not declare build metadata.';
+            } elseif ($requireBuildMetadata) {
+                foreach (['version', 'id', 'built_at', 'git_commit'] as $buildField) {
+                    if ((string) ($release['build'][$buildField] ?? '') === '') {
+                        $warnings[] = 'release.json build metadata is missing ' . $buildField . '.';
+                    }
+                }
+            }
         }
 
         if (is_array($checksum) && ($checksum['status'] ?? '') === 'failed') {
@@ -1030,6 +1046,8 @@ final class KitSetupRunner
                 'name' => $release['name'] ?? null,
                 'version' => $release['version'] ?? null,
                 'display_version' => $release['display_version'] ?? null,
+                'milestone' => $release['milestone'] ?? null,
+                'build' => $release['build'] ?? null,
             ] : null,
             'archive_sha256' => $archiveSha256,
             'checksum' => $checksum,
@@ -3922,6 +3940,9 @@ final class KitSetupRunner
     private function writeJsonFile(string $path, array $data): void
     {
         $this->ensureDirectory(dirname($path));
+        if (array_key_exists('kit_setup_version', $data) && !array_key_exists('kit_setup', $data)) {
+            $data['kit_setup'] = $this->kitSetupMetadata();
+        }
         $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         if ($json === false) {
             throw new RuntimeException('Unable to encode JSON for ' . $path);
@@ -3929,6 +3950,15 @@ final class KitSetupRunner
         if (file_put_contents($path, $json . PHP_EOL) === false) {
             throw new RuntimeException('Unable to write JSON file: ' . $path);
         }
+    }
+
+    private function kitSetupMetadata(): array
+    {
+        return [
+            'milestone' => self::MILESTONE,
+            'version' => self::VERSION,
+            'display_version' => self::DISPLAY_VERSION,
+        ];
     }
 
     private function recordCheckpoint(string $runDir, array $context, array $report, string $reportPath): void

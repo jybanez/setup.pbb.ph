@@ -278,6 +278,14 @@ Release bundles should prefer including `vendor/` and built assets for offline-f
   "name": "PBB Realtime",
   "version": "1.0.0",
   "display_version": "v1-1.0.0",
+  "milestone": 1,
+  "build": {
+    "version": "1.0.0",
+    "id": "pbb-realtime-1-1.0.0-20260517.1030",
+    "built_at": "2026-05-17T10:30:00+08:00",
+    "git_commit": "abc1234",
+    "builder": "pbb-realtime-installer-build"
+  },
   "release_date": "2026-05-15",
   "requires": {
     "php": ">=8.2",
@@ -306,6 +314,8 @@ Release bundles should prefer including `vendor/` and built assets for offline-f
   ]
 }
 ```
+
+Shared versioning rule: all PBB app bundles, including Kit Setup itself, should use the milestone/build display convention already used by Hotline: `display_version = v{milestone}-{version}`. The package builder should generate `milestone`, `version`, `display_version`, and `build` metadata from source-controlled app metadata and the current build context. Kit Setup should warn when a package has only a preset `version` without `milestone` and `build` traceability.
 
 ### Unattended Input
 

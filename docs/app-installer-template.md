@@ -39,7 +39,7 @@ Optional modes:
 Recommended release archive:
 
 ```text
-pbb-{app}-{version}.zip
+pbb-{app}-m{milestone}-{version}.zip
 |-- release.json
 |-- checksums.sha256
 |-- app/
@@ -81,6 +81,14 @@ Every bundle must include `release.json` at the archive root.
   "name": "PBB Realtime",
   "version": "1.0.0",
   "display_version": "v1-1.0.0",
+  "milestone": 1,
+  "build": {
+    "version": "1.0.0",
+    "id": "pbb-realtime-1-1.0.0-20260517.1030",
+    "built_at": "2026-05-17T10:30:00+08:00",
+    "git_commit": "abc1234",
+    "builder": "pbb-realtime-installer-build"
+  },
   "release_date": "2026-05-15",
   "release_name": "Initial Installer Contract",
   "type": "laravel",
@@ -130,6 +138,18 @@ Every bundle must include `release.json` at the archive root.
   }
 }
 ```
+
+Versioning rules:
+
+- `milestone` is the project milestone or release line number.
+- `version` is the app build version for that milestone.
+- `display_version` must follow the shared PBB display format: `v{milestone}-{version}`.
+- `build.version` should match `version`.
+- `build.id` should be unique per produced package and should include app id, milestone, version, and build timestamp or CI run id.
+- `build.built_at` must be ISO-8601 with timezone.
+- `build.git_commit` should be the source commit used to produce the package when the project is in git.
+- Package builders must generate these fields from project/build metadata, not hand-edit a stale `release.json` after the fact.
+- Distributable bundles should not include installer package build scripts, CI scaffolding, or package-builder commands unless explicitly approved for a support workflow.
 
 ## Unattended Config
 

@@ -4,6 +4,11 @@
   "private": true,
   "description": "Project Bantay Bayan setup desktop installer shell",
   "main": "desktop/main.js",
+  "pbb": {
+    "milestone": 1,
+    "buildVersion": "0.1.5",
+    "displayVersion": "v1-0.1.5"
+  },
   "scripts": {
     "desktop": "electron .",
     "check:desktop": "node --check desktop/main.js && node --check desktop/preload.js && node --check desktop/renderer.js && node --check desktop/config-builder.js",
