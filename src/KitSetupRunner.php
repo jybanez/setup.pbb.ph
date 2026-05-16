@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.11';
+    private const VERSION = '0.1.12';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.11';
+    private const DISPLAY_VERSION = 'v1-0.1.12';
 
     public function main(array $argv): int
     {
@@ -1546,8 +1546,10 @@ final class KitSetupRunner
         }
 
         $script = $this->makeWindowsDnsClientScript($target, $interfaceAlias);
+        $scriptPath = $this->joinPath((string) $context['run_dir'], 'dns-client-apply.ps1');
+        file_put_contents($scriptPath, $script);
         try {
-            $process = $this->runProcess(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $script], (string) getcwd());
+            $process = $this->runProcess(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scriptPath], (string) getcwd());
         } catch (Throwable $e) {
             $report['status'] = 'failed';
             $report['errors'][] = 'Unable to run PowerShell DNS client update: ' . $e->getMessage();
