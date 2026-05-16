@@ -151,6 +151,7 @@ ipcMain.handle('kit:run-action', async (event, request) => {
     'prepare-packages',
     'dns-plan',
     'dns-apply',
+    'dns-client-apply',
     'dns-verify',
     'ssl-plan',
     'ssl-apply',
@@ -324,6 +325,18 @@ function describeAction(action, config) {
         `dns.update_mode: ${config.dns && config.dns.update_mode ? config.dns.update_mode : 'not configured'}`
       ]
     },
+    'dns-client-apply': {
+      title: 'Use Local DNS On This Machine',
+      risk: config.dns && config.dns.client_update_mode === 'apply' ? 'mutating' : 'guarded',
+      summary: config.dns && config.dns.client_update_mode === 'apply'
+        ? 'Windows network adapter DNS settings may be changed to use the local Technitium DNS server.'
+        : 'DNS client apply will skip adapter changes because client update mode is not apply.',
+      details: [
+        `target DNS: ${config.dns && config.dns.client_nameserver ? config.dns.client_nameserver : 'Technitium URL host'}`,
+        `adapter: ${config.dns && config.dns.client_interface_alias ? config.dns.client_interface_alias : 'auto-select active adapter'}`,
+        `dns.client_update_mode: ${config.dns && config.dns.client_update_mode ? config.dns.client_update_mode : 'not configured'}`
+      ]
+    },
     'dns-verify': {
       title: 'Verify DNS Records',
       risk: 'safe',
@@ -440,6 +453,7 @@ function getReportPath(configPath, runId, action) {
     'prepare-packages': 'package-report.json',
     'dns-plan': 'dns-plan.json',
     'dns-apply': 'dns-apply.json',
+    'dns-client-apply': 'dns-client-apply.json',
     'dns-verify': 'dns-verify.json',
     'ssl-plan': 'ssl-plan.json',
     'ssl-apply': 'ssl-apply.json',

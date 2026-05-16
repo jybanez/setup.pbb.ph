@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.7';
+    private const VERSION = '0.1.8';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.7';
+    private const DISPLAY_VERSION = 'v1-0.1.8';
 
     public function main(array $argv): int
     {
@@ -24,8 +24,8 @@ final class KitSetupRunner
             }
 
             $action = (string) ($options['action'] ?? 'plan');
-            if (!in_array($action, ['detect', 'hub-resolve', 'prepare-packages', 'dns-plan', 'dns-apply', 'dns-verify', 'ssl-plan', 'ssl-apply', 'remote-check', 'smoke-check', 'stage-report', 'finish-report', 'plan', 'preflight', 'install', 'populate'], true)) {
-                throw new InvalidArgumentException('Unsupported --action. Use detect, hub-resolve, prepare-packages, dns-plan, dns-apply, dns-verify, ssl-plan, ssl-apply, remote-check, smoke-check, stage-report, finish-report, plan, preflight, install, or populate.');
+            if (!in_array($action, ['detect', 'hub-resolve', 'prepare-packages', 'dns-plan', 'dns-apply', 'dns-client-apply', 'dns-verify', 'ssl-plan', 'ssl-apply', 'remote-check', 'smoke-check', 'stage-report', 'finish-report', 'plan', 'preflight', 'install', 'populate'], true)) {
+                throw new InvalidArgumentException('Unsupported --action. Use detect, hub-resolve, prepare-packages, dns-plan, dns-apply, dns-client-apply, dns-verify, ssl-plan, ssl-apply, remote-check, smoke-check, stage-report, finish-report, plan, preflight, install, or populate.');
             }
 
             $config = $this->readJsonFile($configPath);
@@ -101,6 +101,15 @@ final class KitSetupRunner
                 $this->writeJsonFile($reportPath, $report);
                 $this->recordCheckpoint($runDir, $context, $report, $reportPath);
                 $this->writeLine('DNS apply report: ' . $this->joinPath($runDir, 'dns-apply.json'));
+                return $report['status'] === 'success' || $report['status'] === 'skipped' ? 0 : 1;
+            }
+
+            if ($action === 'dns-client-apply') {
+                $report = $this->runDnsClientApply($config, $context);
+                $reportPath = $this->joinPath($runDir, 'dns-client-apply.json');
+                $this->writeJsonFile($reportPath, $report);
+                $this->recordCheckpoint($runDir, $context, $report, $reportPath);
+                $this->writeLine('DNS client apply report: ' . $this->joinPath($runDir, 'dns-client-apply.json'));
                 return $report['status'] === 'success' || $report['status'] === 'skipped' ? 0 : 1;
             }
 
@@ -1185,14 +1194,6 @@ final class KitSetupRunner
             $records[] = $this->makeDnsRecord($host, $zone, $ipAddress, $ttl, $appId, false);
         }
 
-        $relayAlias = (string) ($domains['relay_alias'] ?? $config['kit']['domain'] ?? $config['shared']['hub']['domain'] ?? '');
-        if ($relayAlias !== '') {
-            $host = $this->hostFromUrlOrHost($relayAlias);
-            if ($host !== '') {
-                $records[] = $this->makeDnsRecord($host, $zone, $ipAddress, $ttl, 'pbb-relay', true);
-            }
-        }
-
         $records = $this->dedupeDnsRecords($records);
         if (count($records) === 0) {
             $warnings[] = 'No DNS records were planned.';
@@ -1292,6 +1293,89 @@ final class KitSetupRunner
         return $apply;
     }
 
+    private function runDnsClientApply(array $config, array $context): array
+    {
+        $dns = $config['dns'] ?? [];
+        if (!is_array($dns)) {
+            $dns = [];
+        }
+
+        $target = $this->dnsClientTargetServer($dns);
+        $interfaceAlias = trim((string) ($dns['client_interface_alias'] ?? ''));
+        $mode = (string) ($dns['client_update_mode'] ?? 'plan-only');
+        $report = [
+            'schema_version' => 1,
+            'kit_setup_version' => self::VERSION,
+            'action' => 'dns-client-apply',
+            'status' => 'running',
+            'started_at' => $context['started_at'],
+            'finished_at' => null,
+            'run_id' => $context['run_id'],
+            'run_dir' => $context['run_dir'],
+            'platform' => PHP_OS_FAMILY,
+            'update_mode' => $mode,
+            'target_nameserver' => $target,
+            'interface_alias' => $interfaceAlias !== '' ? $interfaceAlias : null,
+            'before' => null,
+            'after' => null,
+            'warnings' => [],
+            'errors' => [],
+        ];
+
+        if ($mode !== 'apply') {
+            $report['status'] = 'skipped';
+            $report['warnings'][] = 'dns.client_update_mode is not apply; client DNS settings were not changed.';
+            $report['finished_at'] = date(DATE_ATOM);
+            return $report;
+        }
+
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $report['status'] = 'failed';
+            $report['errors'][] = 'dns-client-apply currently supports Windows only.';
+            $report['finished_at'] = date(DATE_ATOM);
+            return $report;
+        }
+
+        if ($target === '' || filter_var($target, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            $report['status'] = 'failed';
+            $report['errors'][] = 'A valid IPv4 dns.client_nameserver or Technitium base URL host is required.';
+            $report['finished_at'] = date(DATE_ATOM);
+            return $report;
+        }
+
+        $script = $this->makeWindowsDnsClientScript($target, $interfaceAlias);
+        try {
+            $process = $this->runProcess(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $script], (string) getcwd());
+        } catch (Throwable $e) {
+            $report['status'] = 'failed';
+            $report['errors'][] = 'Unable to run PowerShell DNS client update: ' . $e->getMessage();
+            $report['finished_at'] = date(DATE_ATOM);
+            return $report;
+        }
+
+        $stdout = (string) ($process['stdout'] ?? '');
+        $decoded = json_decode($stdout, true);
+        if (($process['exit_code'] ?? 1) !== 0 || !is_array($decoded)) {
+            $report['status'] = 'failed';
+            $report['errors'][] = 'Windows DNS client update failed. Run Kit Setup as Administrator and verify the adapter name.';
+            if (($process['stderr'] ?? '') !== '') {
+                $report['errors'][] = (string) $process['stderr'];
+            }
+            if ($stdout !== '') {
+                $report['errors'][] = $stdout;
+            }
+            $report['finished_at'] = date(DATE_ATOM);
+            return $report;
+        }
+
+        $report['status'] = 'success';
+        $report['interface_alias'] = $decoded['interface_alias'] ?? $report['interface_alias'];
+        $report['before'] = $decoded['before'] ?? [];
+        $report['after'] = $decoded['after'] ?? [];
+        $report['finished_at'] = date(DATE_ATOM);
+        return $report;
+    }
+
     private function runDnsVerify(array $config, array $context): array
     {
         $plan = $this->runDnsPlan($config, $context);
@@ -1371,6 +1455,54 @@ final class KitSetupRunner
             'status' => $matched ? 'success' : 'failed',
             'message' => $matched ? 'DNS record resolves to the expected address.' : 'DNS record does not resolve to the expected address.',
         ];
+    }
+
+    private function dnsClientTargetServer(array $dns): string
+    {
+        $configured = trim((string) ($dns['client_nameserver'] ?? ''));
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        $baseUrl = trim((string) ($dns['base_url'] ?? ''));
+        $host = $this->hostFromUrlOrHost($baseUrl);
+        return $host;
+    }
+
+    private function makeWindowsDnsClientScript(string $target, string $interfaceAlias): string
+    {
+        $targetLiteral = str_replace("'", "''", $target);
+        $aliasLiteral = str_replace("'", "''", $interfaceAlias);
+        $script = <<<'POWERSHELL'
+$ErrorActionPreference = 'Stop'
+$target = '__TARGET__'
+$requestedAlias = '__ALIAS__'
+if ($requestedAlias -ne '') {
+    $adapter = Get-NetAdapter -Name $requestedAlias -ErrorAction Stop
+} else {
+    $adapter = Get-NetIPConfiguration |
+        Where-Object { $_.NetAdapter.Status -eq 'Up' -and $_.IPv4Address -and $_.IPv4DefaultGateway } |
+        Select-Object -First 1 -ExpandProperty NetAdapter
+    if ($null -eq $adapter) {
+        $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
+    }
+}
+if ($null -eq $adapter) {
+    throw 'No active network adapter was found.'
+}
+$before = @(Get-DnsClientServerAddress -InterfaceAlias $adapter.InterfaceAlias -AddressFamily IPv4).ServerAddresses
+Set-DnsClientServerAddress -InterfaceAlias $adapter.InterfaceAlias -ServerAddresses $target
+$after = @(Get-DnsClientServerAddress -InterfaceAlias $adapter.InterfaceAlias -AddressFamily IPv4).ServerAddresses
+[ordered]@{
+    interface_alias = $adapter.InterfaceAlias
+    interface_index = $adapter.ifIndex
+    before = $before
+    after = $after
+} | ConvertTo-Json -Depth 4
+POWERSHELL
+;
+        $script = str_replace('__TARGET__', $targetLiteral, $script);
+        return str_replace('__ALIAS__', $aliasLiteral, $script);
     }
 
     private function resolveWithSystemDns(string $host, string $type): array
@@ -2104,12 +2236,6 @@ final class KitSetupRunner
             }
 
             $aliases = [];
-            if ($appId === 'pbb-relay' && isset($domains['relay_alias'])) {
-                $aliasHost = $this->hostFromUrlOrHost((string) $domains['relay_alias']);
-                if ($aliasHost !== '' && $aliasHost !== $host) {
-                    $aliases[] = $aliasHost;
-                }
-            }
 
             $entries[] = [
                 'app_id' => $appId,
@@ -2298,7 +2424,7 @@ final class KitSetupRunner
     private function printHelp(): void
     {
         $this->writeLine('PBB Kit Setup ' . self::VERSION);
-        $this->writeLine('Usage: php bin/kit-setup.php --config <path> [--action detect|hub-resolve|prepare-packages|dns-plan|dns-apply|dns-verify|ssl-plan|ssl-apply|remote-check|smoke-check|stage-report|finish-report|plan|preflight|install|populate] [--run-dir <path>] [--run-id <id>] [--app <app-id>]');
+        $this->writeLine('Usage: php bin/kit-setup.php --config <path> [--action detect|hub-resolve|prepare-packages|dns-plan|dns-apply|dns-client-apply|dns-verify|ssl-plan|ssl-apply|remote-check|smoke-check|stage-report|finish-report|plan|preflight|install|populate] [--run-dir <path>] [--run-id <id>] [--app <app-id>]');
     }
 
     private function validateKitConfig(array $config, string $configPath): void

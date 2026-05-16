@@ -314,7 +314,7 @@ For archive packages with `packages.dry_run=false`, Kit Setup extracts the ZIP i
 
 ## DNS Plan
 
-`dns-plan` derives local DNS records from selected local apps, configured standard domains, the relay alias, and `machine.ip_address`.
+`dns-plan` derives local DNS records from selected local apps, configured standard domains, and `machine.ip_address`.
 
 It writes:
 
@@ -329,11 +329,14 @@ The report includes A or AAAA `upsert` records for:
 - `relay.pbb.ph`
 - `realtime.pbb.ph`
 - `hotline.pbb.ph`
-- the Hub-provided relay alias when configured
+
+Hub/uplink relay domains such as `cebu-cebu-relay.pbb.ph` are intentionally excluded from local Technitium DNS and local Apache aliases because they are public coordination domains used by Hub and upstream nodes.
 
 Technitium token material is not written to the report; the report only says whether a token is configured.
 
 `dns-apply` embeds the DNS plan and only calls Technitium when `dns.update_mode` is set to `apply`. It uses the Technitium `/api/zones/records/add` endpoint with the Technitium token sent as a request parameter, `overwrite=true`, and form parameters for `domain`, `zone`, `type`, `ttl`, and `ipAddress`. The raw token is not written to reports.
+
+`dns-client-apply` is a guarded Windows-only action that can point the selected or auto-detected active network adapter at the local Technitium DNS server. It runs only when `dns.client_update_mode=apply`, uses `dns.client_nameserver` when set, otherwise derives the target from `dns.base_url`, and writes the previous and resulting IPv4 DNS server list to `dns-client-apply.json`.
 
 `dns-verify` reruns the DNS plan, resolves each planned hostname from the installer host, and compares the resolved address list with `machine.ip_address`. By default it uses the system resolver. Set `dns.verify_nameserver` to force `nslookup` against a specific DNS server:
 

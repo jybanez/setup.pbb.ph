@@ -40,7 +40,7 @@ Kit Setup creates folders for selected local apps, verifies trusted bundled or o
 
 ## 6. Network & Local DNS
 
-The administrator provides this machine IP and Technitium DNS API access. Kit Setup plans local DNS records for the standard PBB domains and the Hub-provided Relay alias. It updates Technitium only when apply mode is explicitly enabled.
+The administrator provides this machine IP and Technitium DNS API access. Kit Setup plans local DNS records for the standard offline app domains only. Hub/uplink relay domains remain public coordination domains and are not written into local Technitium. Kit Setup can also, with explicit confirmation, set this Windows machine's preferred DNS server to the local Technitium server before verification.
 
 ## 7. SSL & Web Server
 

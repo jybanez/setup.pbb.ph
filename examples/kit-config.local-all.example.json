@@ -101,7 +101,10 @@
     "ttl": 300,
     "update_mode": "plan-only",
     "verification_mode": "system",
-    "verify_nameserver": ""
+    "verify_nameserver": "",
+    "client_nameserver": "",
+    "client_interface_alias": "",
+    "client_update_mode": "plan-only"
   },
   "ssl": {
     "certificate_root": "C:\\wamp64\\certs\\pbb.ph",

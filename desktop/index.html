@@ -108,6 +108,18 @@
                 <input id="applyDnsInput" type="checkbox">
                 <span>Apply DNS records</span>
               </label>
+              <label>
+                <span>Windows DNS Server</span>
+                <input id="dnsClientNameserverInput" type="text" value="" placeholder="Defaults to Technitium host" spellcheck="false">
+              </label>
+              <label>
+                <span>Network Adapter</span>
+                <input id="dnsClientInterfaceInput" type="text" value="" placeholder="Auto-select active adapter" spellcheck="false">
+              </label>
+              <label class="check-row">
+                <input id="applyDnsClientInput" type="checkbox">
+                <span>Set this machine to use local DNS</span>
+              </label>
             </fieldset>
 
             <fieldset data-stage-panel="7">
@@ -255,6 +267,7 @@
           <button data-action="prepare-packages" type="button">Packages</button>
           <button data-action="dns-plan" type="button">Plan DNS</button>
           <button data-action="dns-apply" type="button">Apply DNS</button>
+          <button data-action="dns-client-apply" type="button">Use Local DNS</button>
           <button data-action="dns-verify" type="button">Verify DNS</button>
           <button data-action="ssl-plan" type="button">Plan SSL</button>
           <button data-action="ssl-apply" type="button">Apply SSL</button>

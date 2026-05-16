@@ -31,6 +31,9 @@ const elements = {
   technitiumBaseUrlInput: document.getElementById('technitiumBaseUrlInput'),
   dnsZoneInput: document.getElementById('dnsZoneInput'),
   applyDnsInput: document.getElementById('applyDnsInput'),
+  dnsClientNameserverInput: document.getElementById('dnsClientNameserverInput'),
+  dnsClientInterfaceInput: document.getElementById('dnsClientInterfaceInput'),
+  applyDnsClientInput: document.getElementById('applyDnsClientInput'),
   certRootInput: document.getElementById('certRootInput'),
   certRootButton: document.getElementById('certRootButton'),
   pemUploadPathInput: document.getElementById('pemUploadPathInput'),
@@ -101,7 +104,7 @@ const appOptions = [
   ['pbb-hotline', 'Hotline']
 ];
 
-const guardedActions = new Set(['prepare-packages', 'dns-apply', 'ssl-apply', 'install', 'populate']);
+const guardedActions = new Set(['prepare-packages', 'dns-apply', 'dns-client-apply', 'ssl-apply', 'install', 'populate']);
 
 window.addEventListener('DOMContentLoaded', async () => {
   const defaults = await window.kitSetup.getDefaults();
@@ -273,6 +276,9 @@ function collectSetupForm() {
     technitiumBaseUrl: elements.technitiumBaseUrlInput.value,
     dnsZone: elements.dnsZoneInput.value,
     applyDns: elements.applyDnsInput.checked,
+    dnsClientNameserver: elements.dnsClientNameserverInput.value,
+    dnsClientInterfaceAlias: elements.dnsClientInterfaceInput.value,
+    applyDnsClient: elements.applyDnsClientInput.checked,
     certRoot: elements.certRootInput.value,
     pemUploadPath: elements.pemUploadPathInput.value,
     apacheIncludeOutput: elements.apacheIncludeOutputInput.value,
@@ -749,7 +755,7 @@ function renderCheckpoints(checkpoints, checkpointPath) {
   elements.checkpointPath.textContent = checkpointPath || '';
   elements.checkpointGrid.innerHTML = '';
   const actions = checkpoints && checkpoints.actions ? checkpoints.actions : {};
-  const orderedActions = ['detect', 'hub-resolve', 'stage-report', 'plan', 'prepare-packages', 'dns-plan', 'dns-apply', 'dns-verify', 'ssl-plan', 'ssl-apply', 'remote-check', 'preflight', 'install', 'populate', 'smoke-check', 'finish-report'];
+  const orderedActions = ['detect', 'hub-resolve', 'stage-report', 'plan', 'prepare-packages', 'dns-plan', 'dns-apply', 'dns-client-apply', 'dns-verify', 'ssl-plan', 'ssl-apply', 'remote-check', 'preflight', 'install', 'populate', 'smoke-check', 'finish-report'];
   for (const action of orderedActions) {
     const entry = actions[action] || null;
     const item = document.createElement('button');
@@ -839,6 +845,7 @@ function validateAction(action) {
     'prepare-packages': [3, 4],
     'dns-plan': [6],
     'dns-apply': [6],
+    'dns-client-apply': [6],
     'dns-verify': [6],
     'ssl-plan': [7],
     'ssl-apply': [7],
@@ -918,6 +925,12 @@ function validateStage(step) {
     if (elements.applyDnsInput.checked && cleanValue(elements.technitiumTokenInput.value) === '') {
       fail('Enter the Technitium token before enabling DNS apply.');
     }
+    if (elements.applyDnsClientInput.checked) {
+      const targetDns = cleanValue(elements.dnsClientNameserverInput.value) || hostFromUrl(elements.technitiumBaseUrlInput.value);
+      if (!looksLikeIpv4(targetDns)) {
+        fail('Enter the Windows DNS server IPv4 address, or use a Technitium URL with an IPv4 host.');
+      }
+    }
   }
   if (step === 7) {
     if (cleanValue(elements.certRootInput.value) === '' && cleanValue(elements.pemUploadPathInput.value) === '') {
@@ -961,6 +974,26 @@ function cleanValue(value) {
 function looksLikeIpOrHost(value) {
   const text = cleanValue(value);
   return /^[a-z0-9.-]+$/i.test(text) && text.includes('.');
+}
+
+function looksLikeIpv4(value) {
+  const text = cleanValue(value);
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(text)) {
+    return false;
+  }
+  return text.split('.').every((part) => Number(part) >= 0 && Number(part) <= 255);
+}
+
+function hostFromUrl(value) {
+  const text = cleanValue(value);
+  if (text === '') {
+    return '';
+  }
+  try {
+    return new URL(text).hostname;
+  } catch (error) {
+    return text.split('/')[0].split(':')[0];
+  }
 }
 
 function renderGenericReport(action, report) {

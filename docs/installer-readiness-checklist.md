@@ -58,7 +58,7 @@ Implemented:
 - [x] Redacted secret report generation
 - [x] All-app dry-run population through Kit Setup
 - [x] Trusted package manifest dry-run verification
-- [x] DNS plan generation for selected local apps and relay alias
+- [x] DNS plan generation for selected local app domains
 - [x] Platform probes for Apache, MySQL/MariaDB, ffmpeg, ffprobe, and WAMP services
 - [x] Optional open/available port checks in platform detection
 - [x] Remote dependency DNS/HTTP health checks for split-machine installs
@@ -106,6 +106,7 @@ Recent note:
 - 2026-05-15 17:15 local harness run `local_dns_plan_1` generated six DNS upsert records: the five standard app domains plus the Cebu relay alias.
 - 2026-05-15 17:20 local harness run `local_dns_apply_plan_only_1` exercised `dns-apply` with `dns.update_mode=plan-only`; it embedded the six-record plan and skipped API calls as expected.
 - 2026-05-15 17:30 local harness run `local_ssl_plan_coverage_1` validated the local `*.pbb.ph` certificate/key pair, confirmed SAN coverage for six planned hostnames, and generated five Apache HTTPS vhosts, including the Hub-provided Relay alias. The SSL planner also supports guarded PEM bundle extraction when explicitly enabled.
+- 2026-05-17 update: Hub/uplink relay aliases are now excluded from local Technitium and local Apache aliases because those domains remain public coordination endpoints. Current DNS/SSL plans should cover only the selected local app domains.
 - 2026-05-15 17:35 local harness run `pem_extract_smoke_1` extracted a disposable PEM bundle under `storage\pem-test`, wrote certificate/key/fullchain outputs, validated the cert/key match, and confirmed host coverage.
 - 2026-05-15 17:40 local harness runs `local_ssl_apply_plan_only_1` and `ssl_apply_smoke_1` verified that `ssl-apply` skips by default, then writes a disposable Apache include under `storage\ssl-apply-test` when `ssl.web_server_update_mode=apply`.
 - 2026-05-15 17:50 local harness run `platform_detect_tools_1` passed PHP extension checks plus Apache, MySQL/MariaDB, ffmpeg, ffprobe, `wampapache64`, and `wampmariadb64` probes. The only warning was the not-yet-created Apache include output folder.

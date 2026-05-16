@@ -277,6 +277,16 @@
         },
         "verify_nameserver": {
           "type": "string"
+        },
+        "client_nameserver": {
+          "type": "string"
+        },
+        "client_interface_alias": {
+          "type": "string"
+        },
+        "client_update_mode": {
+          "type": "string",
+          "enum": ["apply", "plan-only", "manual"]
         }
       },
       "additionalProperties": true
