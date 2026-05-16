@@ -8,4 +8,6 @@
   Delete "$SMPROGRAMS\Project Bantay Bayan\Setup.lnk"
   Delete "$SMPROGRAMS\Project Bantay Bayan\Data Prep.lnk"
   RMDir "$SMPROGRAMS\Project Bantay Bayan"
+  RMDir /r "$APPDATA\pbb-kit-setup"
+  RMDir /r "$LOCALAPPDATA\pbb-kit-setup"
 !macroend
