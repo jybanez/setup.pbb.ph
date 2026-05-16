@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.5';
+    private const VERSION = '0.1.6';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.5';
+    private const DISPLAY_VERSION = 'v1-0.1.6';
 
     public function main(array $argv): int
     {
@@ -1216,7 +1216,7 @@ final class KitSetupRunner
                 'base_url' => $dns['base_url'] ?? null,
                 'token_env' => $dns['token_env'] ?? null,
                 'token_configured' => $this->dnsTokenConfigured($dns),
-                'apply_supported' => false,
+                'apply_supported' => $provider === 'technitium',
             ],
             'records' => $records,
             'warnings' => $warnings,
@@ -1442,9 +1442,10 @@ final class KitSetupRunner
             'overwrite' => 'true',
             'ipAddress' => (string) ($record['value'] ?? ''),
             'comments' => 'Managed by PBB Kit Setup',
+            'token' => $token,
         ];
 
-        $response = $this->postFormJson($url, $params, $token);
+        $response = $this->postFormJson($url, $params);
         $ok = ($response['json']['status'] ?? null) === 'ok';
         return [
             'record' => $record,
@@ -1455,7 +1456,7 @@ final class KitSetupRunner
         ];
     }
 
-    private function postFormJson(string $url, array $params, string $bearerToken): array
+    private function postFormJson(string $url, array $params): array
     {
         $body = http_build_query($params);
         $context = stream_context_create([
@@ -1464,7 +1465,6 @@ final class KitSetupRunner
                 'header' => [
                     'Content-Type: application/x-www-form-urlencoded',
                     'Accept: application/json',
-                    'Authorization: Bearer ' . $bearerToken,
                 ],
                 'content' => $body,
                 'ignore_errors' => true,
