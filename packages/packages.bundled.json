@@ -1,14 +1,14 @@
 {
     "schema_version":  1,
     "generated_for":  "Project Bantay Bayan bundled app packages",
-    "generated_at":  "2026-05-15T23:00:18.8395869Z",
+    "generated_at":  "2026-05-16T00:43:41.7556163Z",
     "packages":  [
                      {
                          "app_id":  "pbb-mapserver",
                          "version":  "1.0.0",
                          "source_type":  "zip",
                          "path":  "bundled/pbb-mapserver-1.0.0.zip",
-                         "sha256":  "9b9dc285523d88ddd5fa74ea5de8269e6054dbdf434cf3c1acb442b35e30cb11",
+                         "sha256":  "8a707d4e57a4ee903ca5ae8a366d5711195772c5765d4f5f9dd7a420ae64cf7b",
                          "trusted":  true,
                          "signature_status":  "local-trusted"
                      },
@@ -17,7 +17,7 @@
                          "version":  "1.0.0",
                          "source_type":  "zip",
                          "path":  "bundled/pbb-maestro-1.0.0.zip",
-                         "sha256":  "be8a3a96d25f8d2d6c6438f499f746f8a103ad17fdb1e56d15d30ddb37d6d5ad",
+                         "sha256":  "a5ba0c9cbddcbe82e28a59a64d4782989c454b671a8554359459ce1b03d803e0",
                          "trusted":  true,
                          "signature_status":  "local-trusted"
                      },
@@ -26,7 +26,7 @@
                          "version":  "1.0.0",
                          "source_type":  "zip",
                          "path":  "bundled/pbb-realtime-1.0.0.zip",
-                         "sha256":  "f0299acea6acf86b4b4bc6af655094ef355b483785de0434a900483222c0c048",
+                         "sha256":  "d8638362836b7638b96c68bf30d5a7c7020a8c5ba73e6178aa164201e04e3a4b",
                          "trusted":  true,
                          "signature_status":  "local-trusted"
                      },
@@ -35,7 +35,7 @@
                          "version":  "1.1.0",
                          "source_type":  "zip",
                          "path":  "bundled/pbb-relay-1.1.0.zip",
-                         "sha256":  "1b5d4d8fb5cadd10c743560dbe64d79e4eb3866345061d8536ecc72a38b4bac0",
+                         "sha256":  "bdb3460f23a4bad27d44c67221e5569f3cf1bef259278702570009067ce77655",
                          "trusted":  true,
                          "signature_status":  "local-trusted"
                      },
@@ -44,7 +44,7 @@
                          "version":  "5.6.1",
                          "source_type":  "zip",
                          "path":  "bundled/pbb-hotline-5.6.1.zip",
-                         "sha256":  "7f8e30c0a853412dcd5d7bf943fe96586cd0352cd7d4384db2d5156a084d8808",
+                         "sha256":  "c80521ebd5862cb1eb4893e850c79f6a923cd95f324d3dba87e14282c69ee69d",
                          "trusted":  true,
                          "signature_status":  "local-trusted"
                      }

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.3';
+    private const VERSION = '0.1.4';
 
     public function main(array $argv): int
     {
