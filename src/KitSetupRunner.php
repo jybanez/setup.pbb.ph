@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.18';
+    private const VERSION = '0.1.19';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.18';
+    private const DISPLAY_VERSION = 'v1-0.1.19';
 
     public function main(array $argv): int
     {

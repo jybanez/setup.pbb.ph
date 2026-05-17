@@ -6,10 +6,18 @@
 !macroend
 
 !macro customUnInstall
+  nsExec::ExecToLog 'taskkill /IM "Project Bantay Bayan.exe" /F'
   Delete "$SMPROGRAMS\Project Bantay Bayan\Setup.lnk"
   Delete "$SMPROGRAMS\Project Bantay Bayan\Setup DevTools.lnk"
   Delete "$SMPROGRAMS\Project Bantay Bayan\Data Prep.lnk"
   RMDir "$SMPROGRAMS\Project Bantay Bayan"
+
+  SetShellVarContext current
   RMDir /r "$APPDATA\pbb-kit-setup"
   RMDir /r "$LOCALAPPDATA\pbb-kit-setup"
+
+  ReadEnvStr $0 "APPDATA"
+  ReadEnvStr $1 "LOCALAPPDATA"
+  RMDir /r "$0\pbb-kit-setup"
+  RMDir /r "$1\pbb-kit-setup"
 !macroend
