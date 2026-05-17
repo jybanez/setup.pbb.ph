@@ -37,13 +37,39 @@ $excludedSegments = @(
     ".artifacts",
     ".codex",
     ".phpunit.cache",
+    ".scaffold_tmp",
     ".vscode",
     "coverage",
     "node_modules",
     "out",
+    "outputs",
     "storage",
+    "tests",
     "test-results",
     "tmp"
+)
+
+$excludedRootFiles = @(
+    ".env",
+    ".editorconfig",
+    ".gitattributes",
+    ".gitignore",
+    ".gitmodules",
+    ".phpunit.result.cache",
+    "composer.json",
+    "composer.lock",
+    "package.json",
+    "package-lock.json",
+    "phpunit.xml",
+    "vite.config.js"
+)
+
+$excludedRootFilePatterns = @(
+    ".codex_tmp_*",
+    "*.crt",
+    "*.key",
+    "*.pem",
+    "*.bak-*"
 )
 
 function Test-IncludedFile {
@@ -54,13 +80,29 @@ function Test-IncludedFile {
 
     $relative = Get-RelativePath -BasePath $SourceRoot -TargetPath $FullName
     $segments = $relative -split '[\\/]'
+    if ($segments.Length -eq 1) {
+        $fileName = $segments[0]
+        if ($excludedRootFiles -contains $fileName) {
+            return $false
+        }
+        foreach ($pattern in $excludedRootFilePatterns) {
+            if ($fileName -like $pattern) {
+                return $false
+            }
+        }
+    }
+
     foreach ($segment in $segments) {
         if ($excludedSegments -contains $segment) {
             return $false
         }
-        if ($segment -like ".codex_tmp_*" -or $segment -like ".scaffold_tmp_*") {
+        if ($segment -like ".codex_tmp_*" -or $segment -like ".scaffold_tmp*" -or $segment -like ".tmp*") {
             return $false
         }
+    }
+
+    if ($segments.Length -gt 0 -and $segments[0] -eq "docs") {
+        return $false
     }
 
     return $true
@@ -99,6 +141,16 @@ function Add-DirectoryToZip {
             ForEach-Object {
                 $entryName = (Get-RelativePath -BasePath $SourceRoot -TargetPath $_.FullName).Replace("\", "/")
                 if ($AppId -eq "pbb-hotline" -and ($entryName -like "public/vendor/helpers.pbb.ph/*" -or $entryName -like "public/vendor/helpers.pbb.ph.git/*")) {
+                    return
+                }
+                if ($AppId -eq "pbb-hotline" -and $entryName -eq "tools/prepare-helper-runtime.php") {
+                    return
+                }
+                if ($AppId -eq "pbb-hotline" -and @(
+                    "app/Console/Commands/ClearTestIncidents.php",
+                    "app/Console/Commands/SeedSampleSitrepIncidents.php",
+                    "database/seeders/DevUsersSeeder.php"
+                ) -contains $entryName) {
                     return
                 }
                 [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null

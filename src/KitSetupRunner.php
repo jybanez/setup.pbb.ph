@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.30';
+    private const VERSION = '0.1.31';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.30';
+    private const DISPLAY_VERSION = 'v1-0.1.31';
+    private ?string $progressFile = null;
 
     public function main(array $argv): int
     {
@@ -89,8 +90,12 @@ final class KitSetupRunner
             if ($action === 'prepare-package-worker') {
                 $appId = (string) ($options['app'] ?? '');
                 $reportPath = (string) ($options['worker-report'] ?? '');
+                $progressPath = (string) ($options['progress-file'] ?? '');
                 if ($appId === '' || $reportPath === '') {
                     throw new InvalidArgumentException('prepare-package-worker requires --app and --worker-report.');
+                }
+                if ($progressPath !== '') {
+                    $this->progressFile = $progressPath;
                 }
                 $report = $this->runPackagePrepareWorker($config, $runDir, $context, $appId);
                 $this->writeJsonFile($reportPath, $report);
@@ -230,6 +235,19 @@ final class KitSetupRunner
             }
 
             $failed = false;
+            if (in_array($action, ['preflight', 'install'], true)) {
+                $kitReport['database_provisioning'] = $this->provisionAppDatabases($orderedApps, $config);
+                if (($kitReport['database_provisioning']['status'] ?? 'success') === 'failed') {
+                    $failed = true;
+                    $kitReport['status'] = 'failed';
+                    $kitReport['finished_at'] = date(DATE_ATOM);
+                    $reportPath = $this->joinPath($runDir, 'kit-report.json');
+                    $this->writeJsonFile($reportPath, $kitReport);
+                    $this->recordCheckpoint($runDir, $context, $kitReport, $reportPath);
+                    $this->writeLine('Run report: ' . $this->joinPath($runDir, 'kit-report.json'));
+                    return 1;
+                }
+            }
             foreach ($orderedApps as $app) {
                 $appResult = $action === 'populate'
                     ? $this->runAppPopulationTools($app, $config, $runDir, $runId)
@@ -886,13 +904,19 @@ final class KitSetupRunner
                     'message' => 'Package worker started.',
                     'percent' => 1,
                 ]);
-                $active[$appId] = $this->startPackageWorker($context, $appId, $this->joinPath($workerDir, $appId . '.json'));
+                $active[$appId] = $this->startPackageWorker(
+                    $context,
+                    $appId,
+                    $this->joinPath($workerDir, $appId . '.json'),
+                    $this->joinPath($workerDir, $appId . '.progress.json')
+                );
             }
 
             foreach (array_keys($active) as $appId) {
                 $worker = $active[$appId];
                 $this->drainWorkerPipe($worker, 'stdout');
                 $this->drainWorkerPipe($worker, 'stderr');
+                $this->pollWorkerProgress($worker, $appId);
                 $status = proc_get_status($worker['process']);
                 if (($status['running'] ?? false) === true || !$this->workerPipesClosed($worker)) {
                     $now = time();
@@ -912,6 +936,7 @@ final class KitSetupRunner
 
                 $this->drainWorkerPipe($worker, 'stdout');
                 $this->drainWorkerPipe($worker, 'stderr');
+                $this->pollWorkerProgress($worker, $appId, true);
                 foreach ($worker['pipes'] as $pipe) {
                     if (is_resource($pipe)) {
                         fclose($pipe);
@@ -968,7 +993,7 @@ final class KitSetupRunner
         return $queue;
     }
 
-    private function startPackageWorker(array $context, string $appId, string $reportPath): array
+    private function startPackageWorker(array $context, string $appId, string $reportPath, string $progressPath): array
     {
         $script = (string) ($_SERVER['SCRIPT_FILENAME'] ?? '');
         if ($script === '') {
@@ -989,6 +1014,8 @@ final class KitSetupRunner
             $appId,
             '--worker-report',
             $reportPath,
+            '--progress-file',
+            $progressPath,
         ];
         $descriptorSpec = [
             0 => ['pipe', 'r'],
@@ -1006,9 +1033,35 @@ final class KitSetupRunner
             'process' => $process,
             'pipes' => $pipes,
             'report_path' => $reportPath,
+            'progress_path' => $progressPath,
+            'last_progress_hash' => '',
             'started_at' => time(),
             'last_heartbeat_at' => 0,
         ];
+    }
+
+    private function pollWorkerProgress(array &$worker, string $appId, bool $force = false): void
+    {
+        $path = (string) ($worker['progress_path'] ?? '');
+        if ($path === '' || !is_file($path)) {
+            return;
+        }
+        $raw = file_get_contents($path);
+        if (!is_string($raw) || trim($raw) === '') {
+            return;
+        }
+        $hash = sha1($raw);
+        if (!$force && $hash === (string) ($worker['last_progress_hash'] ?? '')) {
+            return;
+        }
+        $payload = json_decode($raw, true);
+        if (!is_array($payload)) {
+            return;
+        }
+        $worker['last_progress_hash'] = $hash;
+        $step = (string) ($payload['step'] ?? 'working');
+        unset($payload['scope'], $payload['app_id'], $payload['step']);
+        $this->writeProgress('package', $appId, $step, $payload);
     }
 
     private function drainWorkerPipe(array $worker, string $name): void
@@ -1022,6 +1075,12 @@ final class KitSetupRunner
         if ($chunk === false || $chunk === '') {
             return;
         }
+        if ($name === 'stdout' && (string) ($worker['progress_path'] ?? '') !== '') {
+            $chunk = $this->removeProgressLines($chunk);
+            if ($chunk === '') {
+                return;
+            }
+        }
         if ($name === 'stderr') {
             fwrite(STDERR, $chunk);
             fflush(STDERR);
@@ -1029,6 +1088,24 @@ final class KitSetupRunner
             fwrite(STDOUT, $chunk);
             fflush(STDOUT);
         }
+    }
+
+    private function removeProgressLines(string $chunk): string
+    {
+        $lines = preg_split('/(\r\n|\n|\r)/', $chunk);
+        if (!is_array($lines)) {
+            return $chunk;
+        }
+
+        $kept = [];
+        foreach ($lines as $line) {
+            if ($line === '' || str_starts_with($line, 'PROGRESS:')) {
+                continue;
+            }
+            $kept[] = $line;
+        }
+
+        return $kept === [] ? '' : implode(PHP_EOL, $kept) . PHP_EOL;
     }
 
     private function workerPipesClosed(array $worker): bool
@@ -1067,8 +1144,26 @@ final class KitSetupRunner
             'scope' => $scope,
             'app_id' => $appId,
             'step' => $step,
+            'updated_at' => date(DATE_ATOM),
         ], $data);
+        if ($this->progressFile !== null && $this->progressFile !== '') {
+            $this->writeProgressFile($this->progressFile, $payload);
+        }
         $this->writeLine('PROGRESS: ' . json_encode($payload, JSON_UNESCAPED_SLASHES));
+    }
+
+    private function writeProgressFile(string $path, array $payload): void
+    {
+        $this->ensureDirectory(dirname($path));
+        $json = json_encode($payload, JSON_UNESCAPED_SLASHES);
+        if ($json === false) {
+            return;
+        }
+        $temporary = $path . '.tmp';
+        if (file_put_contents($temporary, $json . PHP_EOL, LOCK_EX) === false) {
+            return;
+        }
+        @rename($temporary, $path);
     }
 
     private function selectedLocalAppIds(array $config): array
@@ -3858,6 +3953,90 @@ POWERSHELL
             'depends_on' => $app['depends_on'],
             'checksum' => $this->verifyChecksums($app),
         ];
+    }
+
+    private function provisionAppDatabases(array $orderedApps, array $kitConfig): array
+    {
+        $results = [];
+        $seen = [];
+        $failed = false;
+
+        foreach ($orderedApps as $app) {
+            $database = $app['config']['database'] ?? ($kitConfig['shared']['database'] ?? null);
+            if (!is_array($database)) {
+                continue;
+            }
+            $database = $this->resolvePasswordEnvConfig($database);
+            $driver = strtolower((string) ($database['driver'] ?? 'mysql'));
+            $name = (string) ($database['database'] ?? '');
+            if (!in_array($driver, ['mysql', 'mariadb'], true) || $name === '') {
+                continue;
+            }
+            if (isset($seen[$name])) {
+                continue;
+            }
+            $seen[$name] = true;
+            $result = $this->provisionMysqlDatabase($database, (string) ($app['id'] ?? 'app'));
+            $results[] = $result;
+            if (($result['status'] ?? '') !== 'success') {
+                $failed = true;
+            }
+        }
+
+        return [
+            'status' => $failed ? 'failed' : 'success',
+            'mode' => 'create-if-missing',
+            'databases' => $results,
+        ];
+    }
+
+    private function provisionMysqlDatabase(array $database, string $appId): array
+    {
+        $name = (string) ($database['database'] ?? '');
+        $host = (string) ($database['host'] ?? '127.0.0.1');
+        $port = (int) ($database['port'] ?? 3306);
+        $username = (string) ($database['username'] ?? '');
+        $password = (string) ($database['password'] ?? '');
+
+        $result = [
+            'app_id' => $appId,
+            'driver' => strtolower((string) ($database['driver'] ?? 'mysql')),
+            'database' => $name,
+            'host' => $host,
+            'port' => $port,
+            'username' => $username,
+            'status' => 'failed',
+            'message' => '',
+        ];
+
+        if ($username === '') {
+            $result['message'] = 'Database username is required.';
+            return $result;
+        }
+        if (!$this->isSafeMysqlIdentifier($name)) {
+            $result['message'] = 'Database name contains unsupported characters.';
+            return $result;
+        }
+
+        try {
+            $dsn = sprintf('mysql:host=%s;port=%d;charset=utf8mb4', $host, $port);
+            $pdo = new PDO($dsn, $username, $password, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            ]);
+            $pdo->exec(sprintf('CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci', str_replace('`', '``', $name)));
+            $result['status'] = 'success';
+            $result['message'] = 'Database is ready.';
+        } catch (Throwable $e) {
+            $result['message'] = $e->getMessage();
+        }
+
+        return $result;
+    }
+
+    private function isSafeMysqlIdentifier(string $value): bool
+    {
+        return preg_match('/^[A-Za-z0-9_]+$/', $value) === 1;
     }
 
     private function runAppInstaller(array $app, array $kitConfig, string $runDir, string $runId, string $action): array
