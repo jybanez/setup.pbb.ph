@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.15';
+    private const VERSION = '0.1.16';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.15';
+    private const DISPLAY_VERSION = 'v1-0.1.16';
 
     public function main(array $argv): int
     {
@@ -882,6 +882,9 @@ final class KitSetupRunner
                 if (!is_string($appId) || $appId === '') {
                     continue;
                 }
+                $this->writeProgress('package', $appId, 'worker-started', [
+                    'message' => 'Package worker started.',
+                ]);
                 $active[$appId] = $this->startPackageWorker($context, $appId, $this->joinPath($workerDir, $appId . '.json'));
             }
 
@@ -1007,8 +1010,10 @@ final class KitSetupRunner
         }
         if ($name === 'stderr') {
             fwrite(STDERR, $chunk);
+            fflush(STDERR);
         } else {
-            echo $chunk;
+            fwrite(STDOUT, $chunk);
+            fflush(STDOUT);
         }
     }
 
@@ -4520,5 +4525,6 @@ POWERSHELL
     {
         $stream = $stderr ? STDERR : STDOUT;
         fwrite($stream, $line . PHP_EOL);
+        fflush($stream);
     }
 }
