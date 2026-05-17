@@ -15,6 +15,7 @@
           <div>
             <h1 id="appModeTitle">Setup</h1>
             <p id="appModeSubtitle">Node installer</p>
+            <p class="kit-version" id="kitSetupVersion">Version loading</p>
           </div>
         </div>
         <nav class="stage-nav" id="stageNav" aria-label="Setup stages"></nav>
@@ -82,11 +83,53 @@
             </fieldset>
 
             <fieldset data-stage-panel="5">
-              <legend>Trusted Packages</legend>
-              <p class="panel-copy">Kit Setup verifies bundled or official signed app packages before any app installer runs.</p>
+              <legend>Admin & Database</legend>
+              <label>
+                <span>Database Host</span>
+                <input id="databaseHostInput" type="text" value="127.0.0.1" spellcheck="false">
+              </label>
+              <label>
+                <span>Database Port</span>
+                <input id="databasePortInput" type="number" min="1" max="65535" value="3306">
+              </label>
+              <label>
+                <span>Database Username</span>
+                <input id="databaseUsernameInput" type="text" value="root" spellcheck="false">
+              </label>
+              <label>
+                <span>Database Password</span>
+                <input id="databasePasswordInput" type="password" autocomplete="off">
+              </label>
+              <label>
+                <span>Admin Email</span>
+                <input type="text" value="admin@pbb.local" disabled>
+              </label>
+              <label>
+                <span>Admin Name</span>
+                <input type="text" value="PBB Administrator" disabled>
+              </label>
+              <label>
+                <span>Admin Password</span>
+                <input id="adminPasswordInput" type="password" autocomplete="new-password">
+              </label>
             </fieldset>
 
             <fieldset data-stage-panel="6">
+              <legend>Trusted Packages</legend>
+              <p class="panel-copy">Kit Setup verifies bundled or official signed app packages, then deploys selected local app folders into the base path.</p>
+            </fieldset>
+
+            <fieldset data-stage-panel="7">
+              <legend>Preflight Apps</legend>
+              <p class="panel-copy">Each local app installer checks PHP, files, writable folders, database connectivity, and app-specific blockers before mutation.</p>
+            </fieldset>
+
+            <fieldset data-stage-panel="8">
+              <legend>Install Apps</legend>
+              <p class="panel-copy">Selected app installers write environment files, run migrations, seed initial data, and create the standard first admin account.</p>
+            </fieldset>
+
+            <fieldset data-stage-panel="9">
               <legend>DNS</legend>
               <label>
                 <span>Machine IP</span>
@@ -122,7 +165,7 @@
               </label>
             </fieldset>
 
-            <fieldset data-stage-panel="7">
+            <fieldset data-stage-panel="10">
               <legend>SSL & Apache</legend>
               <div class="inline-field">
                 <label>
@@ -152,35 +195,9 @@
               </label>
             </fieldset>
 
-            <fieldset data-stage-panel="8">
-              <legend>Remote Dependencies</legend>
-              <p class="panel-copy">Apps marked Remote are checked through DNS and HTTP health endpoints before local installation continues.</p>
-            </fieldset>
-
-            <fieldset data-stage-panel="9">
-              <legend>Admin Account</legend>
-              <label>
-                <span>Admin Email</span>
-                <input type="text" value="admin@pbb.local" disabled>
-              </label>
-              <label>
-                <span>Admin Name</span>
-                <input type="text" value="PBB Administrator" disabled>
-              </label>
-              <label>
-                <span>Admin Password</span>
-                <input id="adminPasswordInput" type="password" autocomplete="new-password">
-              </label>
-            </fieldset>
-
-            <fieldset data-stage-panel="10">
-              <legend>Installation Plan</legend>
-              <p class="panel-copy">Review the generated plan before package deployment, DNS writes, SSL writes, or install actions run.</p>
-            </fieldset>
-
             <fieldset data-stage-panel="11">
-              <legend>Stage-By-Stage Install</legend>
-              <p class="panel-copy">Install actions are guarded. Confirm each mutating action before it runs. Data preparation is a separate post-install workflow.</p>
+              <legend>Remote & Smoke Checks</legend>
+              <p class="panel-copy">Apps marked Remote are checked through DNS and HTTP health endpoints. Final smoke checks verify reachable local app URLs after DNS and SSL are configured.</p>
             </fieldset>
 
             <fieldset data-stage-panel="12">
@@ -214,6 +231,15 @@
           </div>
         </section>
 
+        <section class="package-progress-panel" id="packageProgressPanel" aria-label="Package progress" data-theme="light" hidden>
+          <div class="resume-header">
+            <span>Package Preparation</span>
+            <span id="packageProgressSummary">Waiting</span>
+          </div>
+          <div class="package-overall-progress" id="packageOverallProgress"></div>
+          <div class="package-progress-grid" id="packageProgressGrid"></div>
+        </section>
+
         <section class="resume-panel" aria-label="Resume checkpoints">
           <div class="resume-header">
             <span>Resume Checkpoints</span>
@@ -228,15 +254,6 @@
             <span>Use after preflight, install, or data preparation reports</span>
           </div>
           <div class="app-retry-grid" id="appRetryGrid"></div>
-        </section>
-
-        <section class="package-progress-panel" id="packageProgressPanel" aria-label="Package progress" data-theme="light" hidden>
-          <div class="resume-header">
-            <span>Package Preparation</span>
-            <span id="packageProgressSummary">Waiting</span>
-          </div>
-          <div class="package-overall-progress" id="packageOverallProgress"></div>
-          <div class="package-progress-grid" id="packageProgressGrid"></div>
         </section>
 
         <section class="finish-panel" aria-label="Finish summary">
@@ -265,6 +282,8 @@
           <button data-action="stage-report" type="button">Stages</button>
           <button data-action="plan" type="button">Plan</button>
           <button data-action="prepare-packages" type="button">Packages</button>
+          <button data-action="preflight" type="button">Preflight</button>
+          <button data-action="install" type="button">Install</button>
           <button data-action="dns-plan" type="button">Plan DNS</button>
           <button data-action="dns-apply" type="button">Apply DNS</button>
           <button data-action="dns-client-apply" type="button">Use Local DNS</button>
@@ -272,10 +291,8 @@
           <button data-action="ssl-plan" type="button">Plan SSL</button>
           <button data-action="ssl-apply" type="button">Apply SSL</button>
           <button data-action="remote-check" type="button">Remote</button>
-          <button data-action="preflight" type="button">Preflight</button>
-          <button data-action="install" type="button">Install</button>
-          <button data-action="populate" type="button">Data Prep</button>
           <button data-action="smoke-check" type="button">Smoke</button>
+          <button data-action="populate" type="button">Data Prep</button>
           <button data-action="finish-report" type="button">Finish</button>
         </section>
 

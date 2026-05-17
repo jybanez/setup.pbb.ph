@@ -16,6 +16,7 @@ const elements = {
   stageNav: document.getElementById('stageNav'),
   appModeTitle: document.getElementById('appModeTitle'),
   appModeSubtitle: document.getElementById('appModeSubtitle'),
+  kitSetupVersion: document.getElementById('kitSetupVersion'),
   stageTitle: document.getElementById('stageTitle'),
   chooseConfigButton: document.getElementById('chooseConfigButton'),
   refreshButton: document.getElementById('refreshButton'),
@@ -25,6 +26,10 @@ const elements = {
   hubTokenInput: document.getElementById('hubTokenInput'),
   technitiumTokenInput: document.getElementById('technitiumTokenInput'),
   adminPasswordInput: document.getElementById('adminPasswordInput'),
+  databaseHostInput: document.getElementById('databaseHostInput'),
+  databasePortInput: document.getElementById('databasePortInput'),
+  databaseUsernameInput: document.getElementById('databaseUsernameInput'),
+  databasePasswordInput: document.getElementById('databasePasswordInput'),
   hubIdInput: document.getElementById('hubIdInput'),
   basePathInput: document.getElementById('basePathInput'),
   basePathButton: document.getElementById('basePathButton'),
@@ -81,13 +86,13 @@ const fallbackStages = [
   'Hub Pairing',
   'Select Apps',
   'Choose Base Path',
+  'Admin & Database',
   'Prepare Trusted App Packages',
+  'Preflight Apps',
+  'Install Apps',
   'Network & Local DNS',
   'SSL & Web Server',
-  'Remote Dependency Check',
-  'Admin Account',
-  'Installation Plan',
-  'Stage-By-Stage Install',
+  'Remote & Smoke Checks',
   'Finish'
 ].map((name, index) => ({
   step: index + 1,
@@ -114,6 +119,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   debugLog('defaults', defaults);
   state.templateConfigPath = defaults.configPath;
   state.launchMode = defaults.launchMode || 'setup';
+  elements.kitSetupVersion.textContent = defaults.kitSetupVersion || '';
   applyLaunchMode(state.launchMode);
   elements.phpPathInput.value = defaults.phpPath;
   elements.configPathInput.value = defaults.configPath;
@@ -298,6 +304,9 @@ function collectSetupForm() {
     apacheIncludeOutput: elements.apacheIncludeOutputInput.value,
     writeExtractedFiles: elements.writeExtractedFilesInput.checked,
     applyWebServer: elements.applyWebServerInput.checked,
+    databaseHost: elements.databaseHostInput.value,
+    databasePort: elements.databasePortInput.value,
+    databaseUsername: elements.databaseUsernameInput.value,
     appScopes: collectAppScopes()
   };
 }
@@ -610,7 +619,8 @@ function collectSecrets() {
   return {
     hubToken: elements.hubTokenInput.value,
     technitiumToken: elements.technitiumTokenInput.value,
-    adminPassword: elements.adminPasswordInput.value
+    adminPassword: elements.adminPasswordInput.value,
+    mysqlPassword: elements.databasePasswordInput.value
   };
 }
 
@@ -807,7 +817,7 @@ function renderCheckpoints(checkpoints, checkpointPath) {
   elements.checkpointPath.textContent = checkpointPath || '';
   elements.checkpointGrid.innerHTML = '';
   const actions = checkpoints && checkpoints.actions ? checkpoints.actions : {};
-  const orderedActions = ['detect', 'hub-resolve', 'stage-report', 'plan', 'prepare-packages', 'dns-plan', 'dns-apply', 'dns-client-apply', 'dns-verify', 'ssl-plan', 'ssl-apply', 'remote-check', 'preflight', 'install', 'populate', 'smoke-check', 'finish-report'];
+  const orderedActions = ['detect', 'hub-resolve', 'stage-report', 'plan', 'prepare-packages', 'preflight', 'install', 'dns-plan', 'dns-apply', 'dns-client-apply', 'dns-verify', 'ssl-plan', 'ssl-apply', 'remote-check', 'smoke-check', 'populate', 'finish-report'];
   for (const action of orderedActions) {
     const entry = actions[action] || null;
     const item = document.createElement('button');
@@ -891,27 +901,27 @@ function validateAction(action) {
   const actionStages = {
     detect: [1],
     'hub-resolve': [1, 2],
-    'stage-report': [1, 2, 3, 4, 6, 7, 9],
+    'stage-report': [1, 2, 3, 4, 5, 9, 10],
     'finish-report': [1],
-    plan: [1, 2, 3, 4, 6, 7, 9],
+    plan: [1, 2, 3, 4, 5, 9, 10],
     'prepare-packages': [3, 4],
-    'dns-plan': [6],
-    'dns-apply': [6],
-    'dns-client-apply': [6],
-    'dns-verify': [6],
-    'ssl-plan': [7],
-    'ssl-apply': [7],
-    'remote-check': [3, 8],
-    preflight: [1, 3, 4, 9],
-    install: [1, 3, 4, 9],
-    populate: [3, 9],
-    'smoke-check': [3, 6, 7]
+    'dns-plan': [9],
+    'dns-apply': [9],
+    'dns-client-apply': [9],
+    'dns-verify': [9],
+    'ssl-plan': [10],
+    'ssl-apply': [10],
+    'remote-check': [3, 11],
+    preflight: [1, 3, 4, 5],
+    install: [1, 3, 4, 5],
+    populate: [3, 5],
+    'smoke-check': [3, 9, 10]
   };
   return collectValidation(actionStages[action] || []);
 }
 
 function validateAllStages() {
-  return collectValidation([1, 2, 3, 4, 6, 7, 9]);
+  return collectValidation([1, 2, 3, 4, 5, 9, 10]);
 }
 
 function collectValidation(steps) {
@@ -964,7 +974,25 @@ function validateStage(step) {
       fail('Choose the base folder where local app folders will be created.');
     }
   }
-  if (step === 6) {
+  if (step === 5) {
+    if (!looksLikeIpOrHost(elements.databaseHostInput.value)) {
+      fail('Enter the MySQL/MariaDB host, for example 127.0.0.1.');
+    }
+    const databasePort = Number(elements.databasePortInput.value);
+    if (!Number.isInteger(databasePort) || databasePort <= 0 || databasePort > 65535) {
+      fail('Enter a valid MySQL/MariaDB port.');
+    }
+    if (cleanValue(elements.databaseUsernameInput.value) === '') {
+      fail('Enter the MySQL/MariaDB username.');
+    }
+    const password = elements.adminPasswordInput.value;
+    if (password.length === 0) {
+      warn('Enter the first administrator password before preflight, install, or data preparation.');
+    } else if (password.length < 8) {
+      fail('Use an administrator password with at least 8 characters.');
+    }
+  }
+  if (step === 9) {
     if (!looksLikeIpOrHost(elements.machineIpInput.value)) {
       fail('Enter this machine IP address or resolvable hostname.');
     }
@@ -984,7 +1012,7 @@ function validateStage(step) {
       }
     }
   }
-  if (step === 7) {
+  if (step === 10) {
     if (cleanValue(elements.certRootInput.value) === '' && cleanValue(elements.pemUploadPathInput.value) === '') {
       fail('Select an existing certificate folder or a PEM bundle.');
     }
@@ -995,15 +1023,6 @@ function validateStage(step) {
       fail('Select a PEM bundle before enabling certificate extraction.');
     }
   }
-  if (step === 9) {
-    const password = elements.adminPasswordInput.value;
-    if (password.length === 0) {
-      warn('Enter the first administrator password before preflight, install, or data preparation.');
-    } else if (password.length < 8) {
-      fail('Use an administrator password with at least 8 characters.');
-    }
-  }
-
   return { step, status, issues };
 }
 

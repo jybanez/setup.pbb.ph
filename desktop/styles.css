@@ -109,6 +109,12 @@ button:disabled {
   color: #aebbc4;
 }
 
+.sidebar .brand .kit-version {
+  margin-top: 4px;
+  color: #d5e0e7;
+  font-size: 11px;
+}
+
 .stage-nav {
   display: grid;
   gap: 8px;

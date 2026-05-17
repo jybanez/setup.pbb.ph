@@ -42,6 +42,7 @@ function buildRuntimeConfig(template, form) {
   }
   setNestedValue(config, ['shared', 'admin', 'password_env'], 'PBB_FIRST_ADMIN_PASSWORD');
 
+  applyDatabaseInputs(config, form);
   applyAppScopesAndPaths(config, selectedApps, basePath);
   return config;
 }
@@ -105,6 +106,36 @@ function applyAppScopesAndPaths(config, selectedApps, basePath) {
     if (domainKey && domains[domainKey]) {
       appConfig.app_url = domains[domainKey];
     }
+  }
+}
+
+function applyDatabaseInputs(config, form) {
+  const sharedDatabase = getNestedValue(config, ['shared', 'database']) || {};
+  const databaseHost = cleanString(form.databaseHost) || sharedDatabase.host || '127.0.0.1';
+  const databasePort = toNumberOrExisting(form.databasePort, sharedDatabase.port || 3306);
+  const databaseUsername = cleanString(form.databaseUsername) || sharedDatabase.username || 'root';
+  const databasePasswordEnv = 'PBB_MYSQL_PASSWORD';
+
+  setNestedValue(config, ['shared', 'database', 'driver'], sharedDatabase.driver || 'mysql');
+  setNestedValue(config, ['shared', 'database', 'host'], databaseHost);
+  setNestedValue(config, ['shared', 'database', 'port'], databasePort);
+  setNestedValue(config, ['shared', 'database', 'username'], databaseUsername);
+  delete config.shared.database.password;
+  setNestedValue(config, ['shared', 'database', 'password_env'], databasePasswordEnv);
+
+  if (!Array.isArray(config.apps)) {
+    return;
+  }
+
+  for (const appConfig of config.apps) {
+    if (!appConfig.database || typeof appConfig.database !== 'object') {
+      continue;
+    }
+    appConfig.database.host = databaseHost;
+    appConfig.database.port = databasePort;
+    appConfig.database.username = databaseUsername;
+    delete appConfig.database.password;
+    appConfig.database.password_env = databasePasswordEnv;
   }
 }
 

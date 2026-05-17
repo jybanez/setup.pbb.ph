@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.23';
+    private const VERSION = '0.1.25';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.23';
+    private const DISPLAY_VERSION = 'v1-0.1.25';
 
     public function main(array $argv): int
     {
@@ -355,13 +355,13 @@ final class KitSetupRunner
             $this->makeStage(2, 'Hub Pairing', $hub['status'], $hub['message'], $hub),
             $this->makeStage(3, 'Select Apps', $selectedApps['status'], $selectedApps['message'], $selectedApps),
             $this->makeStage(4, 'Choose Base Path', $basePath['status'], $basePath['message'], $basePath),
-            $this->makeStage(5, 'Prepare Trusted App Packages', $summary['packages']['status'] ?? 'warning', 'Trusted package plan completed.', $summary['packages']),
-            $this->makeStage(6, 'Network & Local DNS', $summary['dns']['status'] ?? 'warning', 'Local DNS plan completed.', ['record_count' => count($summary['dns']['records'] ?? [])]),
-            $this->makeStage(7, 'SSL & Web Server', $summary['ssl']['status'] ?? 'warning', 'SSL and vhost plan completed.', $summary['ssl']),
-            $this->makeStage(8, 'Remote Dependency Check', $summary['remote_dependencies']['status'] ?? 'success', 'Remote dependency check completed.', $summary['remote_dependencies']),
-            $this->makeStage(9, 'Admin Account', $admin['status'], $admin['message'], $admin),
-            $this->makeStage(10, 'Installation Plan', $summary['status'], 'Consolidated installation plan is ready.'),
-            $this->makeStage(11, 'Stage-By-Stage Install', 'pending', 'Waiting for administrator confirmation before install actions run.'),
+            $this->makeStage(5, 'Admin & Database', $admin['status'], $admin['message'], $admin),
+            $this->makeStage(6, 'Prepare Trusted App Packages', $summary['packages']['status'] ?? 'warning', 'Trusted package plan completed.', $summary['packages']),
+            $this->makeStage(7, 'Preflight Apps', 'pending', 'Waiting for app preflight checks.'),
+            $this->makeStage(8, 'Install Apps', 'pending', 'Waiting for administrator confirmation before app installers run.'),
+            $this->makeStage(9, 'Network & Local DNS', $summary['dns']['status'] ?? 'warning', 'Local DNS plan completed.', ['record_count' => count($summary['dns']['records'] ?? [])]),
+            $this->makeStage(10, 'SSL & Web Server', $summary['ssl']['status'] ?? 'warning', 'SSL and vhost plan completed.', $summary['ssl']),
+            $this->makeStage(11, 'Remote & Smoke Checks', $summary['remote_dependencies']['status'] ?? 'success', 'Remote dependency check completed.', $summary['remote_dependencies']),
             $this->makeStage(12, 'Finish', 'pending', 'Final service checks and report export run after installation.'),
         ];
         $status = $this->aggregateStatuses(array_map(static fn (array $stage): string => $stage['status'], array_filter(
@@ -893,7 +893,7 @@ final class KitSetupRunner
                 $this->drainWorkerPipe($worker, 'stdout');
                 $this->drainWorkerPipe($worker, 'stderr');
                 $status = proc_get_status($worker['process']);
-                if (($status['running'] ?? false) === true) {
+                if (($status['running'] ?? false) === true || !$this->workerPipesClosed($worker)) {
                     $now = time();
                     $lastHeartbeat = (int) ($worker['last_heartbeat_at'] ?? 0);
                     if ($now - $lastHeartbeat >= 3) {
@@ -1027,6 +1027,17 @@ final class KitSetupRunner
             fwrite(STDOUT, $chunk);
             fflush(STDOUT);
         }
+    }
+
+    private function workerPipesClosed(array $worker): bool
+    {
+        foreach ([1, 2] as $index) {
+            $pipe = $worker['pipes'][$index] ?? null;
+            if (is_resource($pipe) && !feof($pipe)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private function normalizePackageEntries($packages): array
@@ -4042,7 +4053,7 @@ POWERSHELL
         }
 
         if (is_array($database)) {
-            $result['database'] = $database;
+            $result['database'] = $this->resolvePasswordEnvConfig($database);
         }
 
         foreach (['admin', 'config'] as $key) {
@@ -4066,16 +4077,21 @@ POWERSHELL
 
     private function resolveAdminConfig(array $admin): array
     {
-        $passwordEnv = (string) ($admin['password_env'] ?? '');
+        return $this->resolvePasswordEnvConfig($admin);
+    }
+
+    private function resolvePasswordEnvConfig(array $config): array
+    {
+        $passwordEnv = (string) ($config['password_env'] ?? '');
         if ($passwordEnv !== '') {
             $password = getenv($passwordEnv);
             if (is_string($password) && $password !== '') {
-                $admin['password'] = $password;
+                $config['password'] = $password;
             }
         }
 
-        unset($admin['password_env']);
-        return $admin;
+        unset($config['password_env']);
+        return $config;
     }
 
     private function verifyChecksums(array $app): array

@@ -5,6 +5,7 @@ const path = require('path');
 const configBuilder = require('./config-builder');
 
 const repoRoot = path.resolve(__dirname, '..');
+const packageMeta = require(path.join(repoRoot, 'package.json'));
 const defaultConfigPath = path.join(repoRoot, 'examples', 'kit-config.local-all.example.json');
 const runnerPath = path.join(repoRoot, 'bin', 'kit-setup.php');
 const appIconPath = path.join(repoRoot, 'assets', 'branding', 'app-icon.ico');
@@ -71,7 +72,8 @@ ipcMain.handle('kit:get-defaults', async () => ({
   caCertExists: fs.existsSync(caCertPath),
   userDataPath: app.getPath('userData'),
   launchMode,
-  devToolsEnabled
+  devToolsEnabled,
+  kitSetupVersion: packageMeta?.pbb?.displayVersion || `v${packageMeta.version}`
 }));
 
 function getLaunchMode() {
@@ -354,7 +356,8 @@ function buildRuntimeEnv(secrets) {
   const mappings = {
     hubToken: 'PBB_HUB_TOKEN',
     technitiumToken: 'PBB_TECHNITIUM_TOKEN',
-    adminPassword: 'PBB_FIRST_ADMIN_PASSWORD'
+    adminPassword: 'PBB_FIRST_ADMIN_PASSWORD',
+    mysqlPassword: 'PBB_MYSQL_PASSWORD'
   };
 
   for (const [field, envName] of Object.entries(mappings)) {
