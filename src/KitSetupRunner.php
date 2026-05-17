@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.34';
+    private const VERSION = '0.1.35';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.34';
+    private const DISPLAY_VERSION = 'v1-0.1.35';
     private ?string $progressFile = null;
 
     public function main(array $argv): int
@@ -571,16 +571,28 @@ final class KitSetupRunner
         $name = (string) ($admin['name'] ?? '');
         $password = (string) ($admin['password'] ?? '');
         $passwordEnv = (string) ($admin['password_env'] ?? '');
-        $passwordConfigured = $password !== '' || ($passwordEnv !== '' && getenv($passwordEnv) !== false && getenv($passwordEnv) !== '');
-        $status = ($email === 'admin@pbb.local' && $name !== '' && $passwordConfigured) ? 'success' : 'warning';
+        $envPassword = $passwordEnv !== '' ? getenv($passwordEnv) : false;
+        $resolvedPassword = $password !== '' ? $password : (is_string($envPassword) ? $envPassword : '');
+        $passwordConfigured = $resolvedPassword !== '';
+        $passwordStrong = $passwordConfigured && $this->isStrongAdminPassword($resolvedPassword);
+        $status = ($email === 'admin@pbb.local' && $name !== '' && $passwordStrong) ? 'success' : 'warning';
         return [
             'status' => $status,
-            'message' => $status === 'success' ? 'Standard administrator account is ready.' : 'Administrator password still needs to be provided.',
+            'message' => $status === 'success' ? 'Standard administrator account is ready.' : 'Administrator password must be at least 12 characters and include uppercase, lowercase, and a number.',
             'name' => $name,
             'email' => $email,
             'password_env' => $passwordEnv,
             'password_configured' => $passwordConfigured,
+            'password_strength' => $passwordStrong ? 'passed' : 'failed',
         ];
+    }
+
+    private function isStrongAdminPassword(string $password): bool
+    {
+        return strlen($password) >= 12
+            && preg_match('/[A-Z]/', $password) === 1
+            && preg_match('/[a-z]/', $password) === 1
+            && preg_match('/[0-9]/', $password) === 1;
     }
 
     private function inspectHubPairingState(array $config): array

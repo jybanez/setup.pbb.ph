@@ -1125,8 +1125,8 @@ function validateStage(step) {
     const password = elements.adminPasswordInput.value;
     if (password.length === 0) {
       warn('Enter the first administrator password before preflight, install, or data preparation.');
-    } else if (password.length < 8) {
-      fail('Use an administrator password with at least 8 characters.');
+    } else if (!isStrongAdminPassword(password)) {
+      fail('Use a first administrator password with at least 12 characters, including uppercase, lowercase, and a number.');
     }
   }
   if (step === 9) {
@@ -1161,6 +1161,13 @@ function validateStage(step) {
     }
   }
   return { step, status, issues };
+}
+
+function isStrongAdminPassword(password) {
+  return password.length >= 12
+    && /[A-Z]/.test(password)
+    && /[a-z]/.test(password)
+    && /[0-9]/.test(password);
 }
 
 function focusFirstInvalidStage(result) {
