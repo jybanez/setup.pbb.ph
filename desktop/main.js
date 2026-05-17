@@ -397,7 +397,7 @@ function describeAction(action, config) {
       details: [
         `Selected local apps: ${localApps.length}`,
         `packages.dry_run: ${String(config.packages ? config.packages.dry_run : true)}`,
-        `packages.max_parallel: ${String(config.packages && config.packages.max_parallel ? config.packages.max_parallel : 1)}`,
+        `packages.max_parallel: ${String(config.packages && config.packages.max_parallel ? config.packages.max_parallel : 5)}`,
         `manifest: ${config.packages && config.packages.manifest_path ? config.packages.manifest_path : 'not configured'}`
       ]
     },

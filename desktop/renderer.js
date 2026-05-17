@@ -447,7 +447,7 @@ function progressStatusForStep(step) {
   if (step === 'failed') {
     return 'failed';
   }
-  if (['hash', 'extract', 'verify', 'deploy', 'validate', 'start'].includes(step)) {
+  if (['hash', 'extract', 'verify', 'deploy', 'validate', 'start', 'worker-started', 'working'].includes(step)) {
     return 'running';
   }
   return 'pending';
@@ -460,6 +460,8 @@ function progressLabelForStep(step) {
     extract: 'Extracting package to staging.',
     verify: 'Verifying release metadata and checksums.',
     deploy: 'Copying package into selected base path.',
+    'worker-started': 'Package worker started.',
+    working: 'Still working on package deployment.',
     complete: 'Package is ready.',
     failed: 'Package preparation failed.'
   };

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.19';
+    private const VERSION = '0.1.21';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.19';
+    private const DISPLAY_VERSION = 'v1-0.1.21';
 
     public function main(array $argv): int
     {
@@ -765,7 +765,7 @@ final class KitSetupRunner
         $entries = $this->normalizePackageEntries($manifest['packages'] ?? []);
         $selectedApps = $this->selectedLocalAppIds($config);
         $allowedTargetRoots = $this->packageTargetRoots($config);
-        $configuredMaxParallel = max(1, min(5, (int) ($packageConfig['max_parallel'] ?? 1)));
+        $configuredMaxParallel = max(1, min(5, (int) ($packageConfig['max_parallel'] ?? 5)));
         $maxParallel = $dryRun ? 1 : $configuredMaxParallel;
 
         $totalApps = count($selectedApps);
@@ -894,6 +894,16 @@ final class KitSetupRunner
                 $this->drainWorkerPipe($worker, 'stderr');
                 $status = proc_get_status($worker['process']);
                 if (($status['running'] ?? false) === true) {
+                    $now = time();
+                    $lastHeartbeat = (int) ($worker['last_heartbeat_at'] ?? 0);
+                    if ($now - $lastHeartbeat >= 3) {
+                        $startedAt = (int) ($worker['started_at'] ?? $now);
+                        $this->writeProgress('package', $appId, 'working', [
+                            'message' => 'Still extracting, verifying, or copying package files.',
+                            'elapsed_seconds' => max(0, $now - $startedAt),
+                        ]);
+                        $worker['last_heartbeat_at'] = $now;
+                    }
                     $active[$appId] = $worker;
                     continue;
                 }
@@ -994,6 +1004,8 @@ final class KitSetupRunner
             'process' => $process,
             'pipes' => $pipes,
             'report_path' => $reportPath,
+            'started_at' => time(),
+            'last_heartbeat_at' => 0,
         ];
     }
 
