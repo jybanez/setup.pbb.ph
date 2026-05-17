@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "generated_for": "Project Bantay Bayan bundled app packages",
-  "generated_at": "2026-05-17T19:04:26.8429972Z",
+  "generated_at": "2026-05-17T20:55:22.5052916Z",
   "packages": [
     {
       "app_id": "pbb-mapserver",
       "version": "1.0.0",
       "source_type": "zip",
       "path": "bundled/pbb-mapserver-1.0.0.zip",
-      "sha256": "5f835883185ad5dbfa0fb4f501e28d71796e9e0e58b716dbf3c467cf766a39d8",
+      "sha256": "f588ccd68e8a933cb9c2d77e61752833d813482262d0dd6cabd63d503c5255a2",
       "trusted": true,
       "signature_status": "local-trusted"
     },
@@ -17,7 +17,7 @@
       "version": "1.0.0",
       "source_type": "zip",
       "path": "bundled/pbb-maestro-1.0.0.zip",
-      "sha256": "d72eecd2f9f1a67d8be83c193dbd2c195055d7984dd707435c38135ac7af9fc1",
+      "sha256": "da81ba32b49994979aa26460e3d69fe0361b77369a3fd3302ff29000d63ff133",
       "trusted": true,
       "signature_status": "local-trusted"
     },
@@ -26,7 +26,7 @@
       "version": "1.0.0",
       "source_type": "zip",
       "path": "bundled/pbb-realtime-1.0.0.zip",
-      "sha256": "17893b577dc75686478e8042c90c1e4a8e0bcda7346fd3762df158628a258145",
+      "sha256": "e964ab05766f26cf7d36ef95d87489c9ff068664ed556cc51362dcf80b42288c",
       "trusted": true,
       "signature_status": "local-trusted"
     },
@@ -35,7 +35,7 @@
       "version": "1.1.0",
       "source_type": "zip",
       "path": "bundled/pbb-relay-1.1.0.zip",
-      "sha256": "d4f093ce32b0af1985504e909edbb0fc965df32b9b5523c07324f5137f9f9def",
+      "sha256": "148a3529459c945d69d9abe767caf5b4ed219b1a185b4a19f55436fe6fae0836",
       "trusted": true,
       "signature_status": "local-trusted"
     },
@@ -44,7 +44,7 @@
       "version": "5.6.1",
       "source_type": "zip",
       "path": "bundled/pbb-hotline-5.6.1.zip",
-      "sha256": "f96bfb108ab3d9938a4f4268982afc4c50a92a769e86aed524ef434dd5173a69",
+      "sha256": "fca2350942d5bd3f118553a9604b71129dc01fae2262bd578f3d6df8e130f699",
       "trusted": true,
       "signature_status": "local-trusted"
     }

@@ -161,11 +161,17 @@ function Add-DirectoryToZip {
                 $manifestLines += "$(Get-Sha256Hex -Path $_.FullName)  $entryName"
             }
 
-        if ($HelperRuntime -ne "") {
-            if (!(Test-Path $HelperRuntime)) {
-                throw "Helper runtime artifact does not exist: $HelperRuntime"
-            }
-            Get-ChildItem -LiteralPath $HelperRuntime -Recurse -File -Force |
+    if ($HelperRuntime -ne "") {
+        if (!(Test-Path $HelperRuntime)) {
+                $fallbackHelperRuntime = Join-Path $SourceRoot "public\vendor\helpers.pbb.ph"
+                if (Test-Path $fallbackHelperRuntime) {
+                    Write-Host "Helper runtime artifact missing for $AppId; using existing public vendor runtime $fallbackHelperRuntime"
+                    $HelperRuntime = $fallbackHelperRuntime
+                } else {
+                    throw "Helper runtime artifact does not exist: $HelperRuntime"
+                }
+        }
+        Get-ChildItem -LiteralPath $HelperRuntime -Recurse -File -Force |
                 ForEach-Object {
                     $relative = (Get-RelativePath -BasePath $HelperRuntime -TargetPath $_.FullName).Replace("\", "/")
                     $entryName = "public/vendor/helpers.pbb.ph/$relative"
