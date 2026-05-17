@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, globalShortcut } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -10,6 +10,7 @@ const runnerPath = path.join(repoRoot, 'bin', 'kit-setup.php');
 const appIconPath = path.join(repoRoot, 'assets', 'branding', 'app-icon.ico');
 const caCertPath = path.join(repoRoot, 'assets', 'certs', 'cacert.pem');
 const launchMode = getLaunchMode();
+const devToolsEnabled = shouldEnableDevTools();
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -29,10 +30,21 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, 'index.html'));
+  if (devToolsEnabled) {
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.openDevTools({ mode: 'detach' });
+    });
+  }
 }
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
+  globalShortcut.register('CommandOrControl+Shift+I', () => {
+    const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    if (win) {
+      win.webContents.toggleDevTools();
+    }
+  });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -45,6 +57,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });
 
 ipcMain.handle('kit:get-defaults', async () => ({
@@ -67,6 +83,10 @@ function getLaunchMode() {
     return 'data-prep';
   }
   return 'setup';
+}
+
+function shouldEnableDevTools() {
+  return process.argv.includes('--devtools') || process.env.PBB_KIT_SETUP_DEVTOOLS === '1';
 }
 
 ipcMain.handle('kit:select-config', async () => {
