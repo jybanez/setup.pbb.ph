@@ -446,7 +446,9 @@ function resetPackageProgress() {
       label,
       step: 'pending',
       status: 'pending',
-      message: 'Waiting for package preparation.'
+      message: 'Waiting for package preparation.',
+      extract_percent: 0,
+      deploy_percent: 0
     });
   }
   renderPackageProgress();
@@ -461,14 +463,60 @@ function updatePackageProgress(payload) {
   const nextPercent = Number.isFinite(Number(payload.percent))
     ? Math.max(Number(current.percent || 0), Number(payload.percent))
     : Number(current.percent || 0);
+  const step = String(payload.step || current.step || '');
+  const status = payload.status || progressStatusForStep(step);
+  const extractPercent = progressPhasePercent('extract', current, payload, status);
+  const deployPercent = progressPhasePercent('deploy', current, payload, status);
   state.packageProgress.set(appId, {
     ...current,
     ...payload,
-    status: payload.status || progressStatusForStep(payload.step),
-    message: payload.message || progressLabelForStep(payload.step),
-    percent: nextPercent
+    status,
+    message: payload.message || progressLabelForStep(step),
+    percent: nextPercent,
+    extract_percent: extractPercent,
+    deploy_percent: deployPercent
   });
   renderPackageProgress();
+}
+
+function progressPhasePercent(phase, current, payload, status) {
+  if (status === 'success') {
+    return 100;
+  }
+  const currentValue = Number(current[`${phase}_percent`] || 0);
+  const step = String(payload.step || '');
+  const payloadPercent = Number.isFinite(Number(payload.percent)) ? Number(payload.percent) : null;
+  if (phase === 'extract') {
+    if (['verify', 'deploy', 'complete'].includes(step)) {
+      return 100;
+    }
+    if (step === 'extract' && payloadPercent !== null) {
+      return Math.max(currentValue, extractPhasePercent(payloadPercent));
+    }
+  }
+  if (phase === 'deploy') {
+    if (step === 'complete') {
+      return 100;
+    }
+    if (step === 'deploy' && payloadPercent !== null) {
+      return Math.max(currentValue, deployPhasePercent(payloadPercent));
+    }
+  }
+  return Math.max(0, Math.min(100, currentValue));
+}
+
+function extractPhasePercent(percent) {
+  if (percent >= 55) {
+    return 100;
+  }
+  return Math.max(0, Math.min(100, Math.round(((percent - 10) / 45) * 100)));
+}
+
+function deployPhasePercent(percent) {
+  if (percent >= 95) {
+    return 100;
+  }
+  return Math.max(0, Math.min(100, Math.round(((percent - 60) / 35) * 100)));
 }
 
 function updatePackageProgressSummary(payload) {
@@ -570,10 +618,27 @@ function renderPackageProgress() {
         <strong>${escapeHtml(item.label || item.app_id)}</strong>
         <span>${escapeHtml(item.message || '')}</span>
       </div>
+      <div class="package-phase-grid" aria-label="${escapeHtml(item.label || item.app_id)} package phases">
+        ${renderPackagePhaseBar('Unpack', item.extract_percent || 0)}
+        ${renderPackagePhaseBar('Copy', item.deploy_percent || 0)}
+      </div>
       <small>${escapeHtml(`${item.step || 'pending'}${itemPercent}`)}</small>
     `;
     elements.packageProgressGrid.appendChild(row);
   }
+}
+
+function renderPackagePhaseBar(label, percent) {
+  const value = Math.max(0, Math.min(100, Math.round(Number(percent || 0))));
+  return `
+    <div class="package-phase">
+      <span>${escapeHtml(label)}</span>
+      <div class="package-phase-bar" role="progressbar" aria-label="${escapeHtml(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value}">
+        <i style="width: ${value}%"></i>
+      </div>
+      <b>${value}%</b>
+    </div>
+  `;
 }
 
 function renderHelperPackageProgress(percent, total, label) {
@@ -726,7 +791,9 @@ function renderPackageReport(report) {
       step: item.extraction || item.source_type || 'complete',
       status: item.status || 'pending',
       message: packageReportMessage(item),
-      percent: item.status === 'pending' ? 0 : 100
+      percent: item.status === 'pending' ? 0 : 100,
+      extract_percent: item.status === 'pending' ? 0 : 100,
+      deploy_percent: item.status === 'pending' ? 0 : 100
     });
   }
   renderPackageProgress();

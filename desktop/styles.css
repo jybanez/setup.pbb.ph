@@ -642,10 +642,10 @@ button:focus {
 
 .package-progress-row {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
+  grid-template-columns: 14px minmax(180px, 1fr) minmax(260px, 0.9fr) auto;
   gap: 10px;
   align-items: center;
-  min-height: 54px;
+  min-height: 64px;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -711,6 +711,66 @@ button:focus {
 .package-progress-row small {
   color: var(--muted);
   font-size: 12px;
+}
+
+.package-phase-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.package-phase {
+  display: grid;
+  grid-template-columns: 48px minmax(70px, 1fr) 34px;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.package-phase span,
+.package-phase b {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.package-phase b {
+  text-align: right;
+}
+
+.package-phase-bar {
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid #d2dde8;
+  border-radius: 999px;
+  background: #edf3f8;
+}
+
+.package-phase-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #127084;
+  transition: width 0.2s ease;
+}
+
+.package-progress-row.success .package-phase-bar i {
+  background: var(--success);
+}
+
+.package-progress-row.failed .package-phase-bar i {
+  background: var(--danger);
+}
+
+@media (max-width: 880px) {
+  .package-progress-row {
+    grid-template-columns: 14px minmax(0, 1fr) auto;
+  }
+
+  .package-phase-grid {
+    grid-column: 2 / -1;
+  }
 }
 
 .app-retry-row {
