@@ -12,6 +12,22 @@
   Delete "$SMPROGRAMS\Project Bantay Bayan\Data Prep.lnk"
   RMDir "$SMPROGRAMS\Project Bantay Bayan"
 
+  SetRegView 64
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ph.pbb.setup"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Project Bantay Bayan"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\pbb-kit-setup"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ph.pbb.setup"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Project Bantay Bayan"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\pbb-kit-setup"
+
+  SetRegView 32
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ph.pbb.setup"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Project Bantay Bayan"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\pbb-kit-setup"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ph.pbb.setup"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Project Bantay Bayan"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\pbb-kit-setup"
+
   SetShellVarContext current
   RMDir /r "$APPDATA\pbb-kit-setup"
   RMDir /r "$LOCALAPPDATA\pbb-kit-setup"
