@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.29';
+    private const VERSION = '0.1.30';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.29';
+    private const DISPLAY_VERSION = 'v1-0.1.30';
 
     public function main(array $argv): int
     {
@@ -884,6 +884,7 @@ final class KitSetupRunner
                 }
                 $this->writeProgress('package', $appId, 'worker-started', [
                     'message' => 'Package worker started.',
+                    'percent' => 1,
                 ]);
                 $active[$appId] = $this->startPackageWorker($context, $appId, $this->joinPath($workerDir, $appId . '.json'));
             }
@@ -901,6 +902,7 @@ final class KitSetupRunner
                         $this->writeProgress('package', $appId, 'working', [
                             'message' => 'Still extracting, verifying, or copying package files.',
                             'elapsed_seconds' => max(0, $now - $startedAt),
+                            'percent' => 1,
                         ]);
                         $worker['last_heartbeat_at'] = $now;
                     }
@@ -1166,6 +1168,7 @@ final class KitSetupRunner
         if ($sourceType === 'directory' && is_dir($packagePath)) {
             $this->writeProgress('package', $appId, 'validate', $progressBase + [
                 'message' => 'Validating release folder.',
+                'percent' => 25,
             ]);
             $releasePath = $this->joinPath($packagePath, 'release.json');
             if (is_file($releasePath)) {
@@ -1178,6 +1181,7 @@ final class KitSetupRunner
             if (is_file($packagePath)) {
                 $this->writeProgress('package', $appId, 'hash', $progressBase + [
                     'message' => 'Checking package SHA-256.',
+                    'percent' => 5,
                 ]);
                 $archiveSha256 = hash_file('sha256', $packagePath);
                 $expectedSha256 = (string) ($entry['sha256'] ?? '');
@@ -1190,13 +1194,23 @@ final class KitSetupRunner
                     } else {
                         $this->writeProgress('package', $appId, 'extract', $progressBase + [
                             'message' => 'Extracting package to staging.',
+                            'percent' => 10,
                         ]);
-                        $extracted = $this->extractPackageArchive($packagePath, $runDir, $appId);
+                        $extracted = $this->extractPackageArchive($packagePath, $runDir, $appId, function (int $current, int $total) use ($appId, $progressBase): void {
+                            $percent = $total > 0 ? 10 + (int) floor(($current / $total) * 45) : 10;
+                            $this->writeProgress('package', $appId, 'extract', $progressBase + [
+                                'message' => sprintf('Extracting package files (%d/%d).', $current, $total),
+                                'current' => $current,
+                                'total_files' => $total,
+                                'percent' => min(55, $percent),
+                            ]);
+                        });
                         $stagingPath = $extracted['staging_path'];
                         $releasePath = $this->joinPath($stagingPath, 'release.json');
                         if (is_file($releasePath)) {
                             $this->writeProgress('package', $appId, 'verify', $progressBase + [
                                 'message' => 'Verifying release metadata and checksums.',
+                                'percent' => 58,
                             ]);
                             $release = $this->readJsonFile($releasePath);
                             $checksum = $this->verifyChecksumsForPath($stagingPath);
@@ -1248,8 +1262,17 @@ final class KitSetupRunner
             try {
                 $this->writeProgress('package', $appId, 'deploy', $progressBase + [
                     'message' => 'Copying package into selected base path.',
+                    'percent' => 60,
                 ]);
-                $deploy = $this->deployStagedPackage($stagingPath, $targetPath, $runDir, $appId, $allowedTargetRoots);
+                $deploy = $this->deployStagedPackage($stagingPath, $targetPath, $runDir, $appId, $allowedTargetRoots, function (int $current, int $total) use ($appId, $progressBase): void {
+                    $percent = $total > 0 ? 60 + (int) floor(($current / $total) * 35) : 60;
+                    $this->writeProgress('package', $appId, 'deploy', $progressBase + [
+                        'message' => sprintf('Copying package files (%d/%d).', $current, $total),
+                        'current' => $current,
+                        'total_files' => $total,
+                        'percent' => min(95, $percent),
+                    ]);
+                });
                 $backupPath = $deploy['backup_path'];
                 $targetPrepared = true;
             } catch (Throwable $e) {
@@ -1261,6 +1284,7 @@ final class KitSetupRunner
         $this->writeProgress('package', $appId, $status === 'failed' ? 'failed' : 'complete', $progressBase + [
             'message' => $status === 'failed' ? implode(' ', $errors) : 'Package is ready.',
             'status' => $status,
+            'percent' => 100,
         ]);
 
         return [
@@ -2572,7 +2596,7 @@ POWERSHELL
         return str_replace('\\', '/', $path);
     }
 
-    private function deployStagedPackage(string $stagingPath, string $targetPath, string $runDir, string $appId, array $allowedTargetRoots): array
+    private function deployStagedPackage(string $stagingPath, string $targetPath, string $runDir, string $appId, array $allowedTargetRoots, ?callable $progress = null): array
     {
         if ($targetPath === '') {
             throw new RuntimeException('Package target path is required for deployment.');
@@ -2594,14 +2618,14 @@ POWERSHELL
             }
         }
 
-        $this->copyDirectory($stagingPath, $targetPath);
+        $this->copyDirectory($stagingPath, $targetPath, $progress);
 
         return [
             'backup_path' => $backupPath,
         ];
     }
 
-    private function extractPackageArchive(string $archivePath, string $runDir, string $appId): array
+    private function extractPackageArchive(string $archivePath, string $runDir, string $appId, ?callable $progress = null): array
     {
         if (!class_exists('ZipArchive')) {
             throw new RuntimeException('PHP ZipArchive extension is required for package extraction.');
@@ -2622,16 +2646,43 @@ POWERSHELL
         }
 
         try {
+            $files = [];
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $name = (string) $zip->getNameIndex($i);
                 $normalized = str_replace('\\', '/', $name);
                 if ($normalized === '' || str_starts_with($normalized, '/') || preg_match('/(^|\/)\.\.(\/|$)/', $normalized) === 1) {
                     throw new RuntimeException('Unsafe archive path: ' . $name);
                 }
+                if (!str_ends_with($normalized, '/')) {
+                    $files[] = ['name' => $name, 'normalized' => $normalized];
+                }
             }
 
-            if (!$zip->extractTo($stagingPath)) {
-                throw new RuntimeException('Unable to extract package archive: ' . $archivePath);
+            $total = count($files);
+            $interval = max(1, (int) floor(max(1, $total) / 25));
+            $current = 0;
+            foreach ($files as $file) {
+                $destination = $this->joinPath($stagingPath, str_replace('/', DIRECTORY_SEPARATOR, $file['normalized']));
+                $this->ensureDirectory(dirname($destination));
+                $stream = $zip->getStream($file['name']);
+                if (!is_resource($stream)) {
+                    throw new RuntimeException('Unable to read package archive entry: ' . $file['name']);
+                }
+                $output = fopen($destination, 'wb');
+                if (!is_resource($output)) {
+                    fclose($stream);
+                    throw new RuntimeException('Unable to create extracted package file: ' . $destination);
+                }
+                try {
+                    stream_copy_to_stream($stream, $output);
+                } finally {
+                    fclose($output);
+                    fclose($stream);
+                }
+                $current++;
+                if ($progress !== null && ($current === 1 || $current === $total || $current % $interval === 0)) {
+                    $progress($current, $total);
+                }
             }
         } finally {
             $zip->close();
@@ -3846,10 +3897,45 @@ POWERSHELL
             'stdout' => $process['stdout'],
             'stderr' => $process['stderr'],
             'app_report_status' => is_array($appReport) ? ($appReport['status'] ?? null) : null,
+            'app_report_summary' => is_array($appReport) ? $this->summarizeAppReport($appReport) : null,
             'status_command' => $statusResult,
             'manifest' => $manifest,
             'services' => is_array($appReport) ? ($appReport['services'] ?? []) : [],
         ]);
+    }
+
+    private function summarizeAppReport(array $appReport): array
+    {
+        $summary = [
+            'status' => $appReport['status'] ?? null,
+            'summary' => $appReport['summary'] ?? null,
+            'warnings' => [],
+            'errors' => [],
+        ];
+
+        foreach (['warnings', 'errors'] as $field) {
+            $items = $appReport[$field] ?? [];
+            if (!is_array($items)) {
+                continue;
+            }
+            foreach ($items as $item) {
+                if (is_array($item)) {
+                    if (($item['status'] ?? null) !== null && (string) $item['status'] !== 'failed') {
+                        continue;
+                    }
+                    $label = (string) ($item['label'] ?? $item['id'] ?? $field);
+                    $message = (string) ($item['message'] ?? '');
+                    $summary[$field][] = trim($label . ($message !== '' ? ': ' . $message : ''));
+                } elseif (is_string($item) && $item !== '') {
+                    $summary[$field][] = $item;
+                }
+                if (count($summary[$field]) >= 6) {
+                    break;
+                }
+            }
+        }
+
+        return $summary;
     }
 
     private function runAppPopulationTools(array $app, array $kitConfig, string $runDir, string $runId): array
@@ -4482,12 +4568,15 @@ POWERSHELL
         }
     }
 
-    private function copyDirectory(string $source, string $target): void
+    private function copyDirectory(string $source, string $target, ?callable $progress = null): void
     {
         if (!is_dir($source)) {
             throw new RuntimeException('Copy source is not a directory: ' . $source);
         }
         $this->ensureDirectory($target);
+        $totalFiles = $this->countDirectoryFiles($source);
+        $copiedFiles = 0;
+        $interval = max(1, (int) floor(max(1, $totalFiles) / 25));
 
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($source, FilesystemIterator::SKIP_DOTS),
@@ -4504,8 +4593,31 @@ POWERSHELL
                 if (!copy($item->getPathname(), $destination)) {
                     throw new RuntimeException('Unable to copy package file: ' . $item->getPathname());
                 }
+                $copiedFiles++;
+                if ($progress !== null && ($copiedFiles === 1 || $copiedFiles === $totalFiles || $copiedFiles % $interval === 0)) {
+                    $progress($copiedFiles, $totalFiles);
+                }
             }
         }
+    }
+
+    private function countDirectoryFiles(string $source): int
+    {
+        if (!is_dir($source)) {
+            return 0;
+        }
+
+        $count = 0;
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($source, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+        foreach ($iterator as $item) {
+            if ($item->isFile()) {
+                $count++;
+            }
+        }
+        return $count;
     }
 
     private function joinPath(string ...$parts): string

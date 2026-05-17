@@ -454,11 +454,15 @@ function updatePackageProgress(payload) {
     return;
   }
   const current = state.packageProgress.get(appId) || { app_id: appId, label: appId };
+  const nextPercent = Number.isFinite(Number(payload.percent))
+    ? Math.max(Number(current.percent || 0), Number(payload.percent))
+    : Number(current.percent || 0);
   state.packageProgress.set(appId, {
     ...current,
     ...payload,
     status: payload.status || progressStatusForStep(payload.step),
-    message: payload.message || progressLabelForStep(payload.step)
+    message: payload.message || progressLabelForStep(payload.step),
+    percent: nextPercent
   });
   renderPackageProgress();
 }
@@ -520,31 +524,39 @@ function renderPackageProgress() {
   const failed = packages.filter((item) => item.status === 'failed').length;
   const running = packages.filter((item) => item.status === 'running').length;
   const total = packages.length;
+  const aggregatePercent = total > 0
+    ? Math.round(packages.reduce((sum, item) => {
+      if (item.status === 'success' || item.status === 'failed') {
+        return sum + 100;
+      }
+      return sum + Math.max(0, Math.min(100, Number(item.percent || 0)));
+    }, 0) / total)
+    : 0;
   const progressLabel = failed > 0
     ? `${done} of ${total} complete, ${failed} failed`
     : running > 0
       ? `${done} of ${total} complete, ${running} running`
       : `${done} of ${total} complete`;
   elements.packageProgressSummary.textContent = progressLabel;
-  renderHelperPackageProgress(done, total, progressLabel);
+  renderHelperPackageProgress(aggregatePercent, total, progressLabel);
   elements.packageProgressGrid.innerHTML = '';
   for (const item of packages) {
     const row = document.createElement('div');
     row.className = `package-progress-row ${item.status || 'pending'}`;
+    const itemPercent = Number.isFinite(Number(item.percent)) ? ` ${Math.round(Number(item.percent))}%` : '';
     row.innerHTML = `
       <span class="package-dot" aria-hidden="true"></span>
       <div class="package-progress-copy">
         <strong>${escapeHtml(item.label || item.app_id)}</strong>
         <span>${escapeHtml(item.message || '')}</span>
       </div>
-      <small>${escapeHtml(item.step || 'pending')}</small>
+      <small>${escapeHtml(`${item.step || 'pending'}${itemPercent}`)}</small>
     `;
     elements.packageProgressGrid.appendChild(row);
   }
 }
 
-function renderHelperPackageProgress(done, total, label) {
-  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+function renderHelperPackageProgress(percent, total, label) {
   const data = {
     label: 'Trusted package preparation',
     value: percent
@@ -693,7 +705,8 @@ function renderPackageReport(report) {
       label: option ? option[1] : appId,
       step: item.extraction || item.source_type || 'complete',
       status: item.status || 'pending',
-      message: packageReportMessage(item)
+      message: packageReportMessage(item),
+      percent: item.status === 'pending' ? 0 : 100
     });
   }
   renderPackageProgress();
@@ -764,12 +777,14 @@ function renderAppRetry(report) {
     if (!appId) {
       continue;
     }
+    const summary = appFailureSummary(app);
     const row = document.createElement('div');
     row.className = `app-retry-row ${app.status || 'pending'}`;
     row.innerHTML = `
       <div class="app-retry-copy">
         <strong>${escapeHtml(app.name || appId)}</strong>
         <span>${escapeHtml(appId)} / ${escapeHtml(app.status || 'pending')}</span>
+        ${summary ? `<span>${escapeHtml(summary)}</span>` : ''}
       </div>
       <div class="app-retry-actions">
         <button type="button" data-app-action="preflight" data-app-id="${escapeHtml(appId)}">Preflight</button>
@@ -782,6 +797,21 @@ function renderAppRetry(report) {
     });
     elements.appRetryGrid.appendChild(row);
   }
+}
+
+function appFailureSummary(app) {
+  const reportSummary = app.app_report_summary || {};
+  const errors = Array.isArray(reportSummary.errors) ? reportSummary.errors.filter(Boolean) : [];
+  if (errors.length > 0) {
+    return errors.slice(0, 2).join(' ');
+  }
+  if (reportSummary.summary && app.status === 'failed') {
+    return reportSummary.summary;
+  }
+  if (app.stderr) {
+    return String(app.stderr).split(/\r?\n/).filter(Boolean).slice(0, 2).join(' ');
+  }
+  return '';
 }
 
 function renderFinishSummary(report) {
@@ -1092,8 +1122,23 @@ function renderGenericReport(action, report) {
   elements.detailName.textContent = `${action} report`;
   elements.detailStatus.textContent = report.status || 'unknown';
   elements.detailStatus.className = `status-pill ${report.status || 'neutral'}`;
-  elements.detailMessage.textContent = report.message || '';
+  elements.detailMessage.textContent = report.message || reportFailureSummary(report);
   elements.detailJson.textContent = JSON.stringify(report, null, 2);
+}
+
+function reportFailureSummary(report) {
+  if (!report || !Array.isArray(report.apps)) {
+    return '';
+  }
+  const failed = report.apps.filter((app) => app.status === 'failed');
+  if (failed.length === 0) {
+    return '';
+  }
+  return failed.map((app) => {
+    const appId = app.name || app.id || app.app_id || 'app';
+    const reason = appFailureSummary(app);
+    return reason ? `${appId}: ${reason}` : `${appId}: failed`;
+  }).slice(0, 3).join(' ');
 }
 
 function markSelectedStage() {
