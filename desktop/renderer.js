@@ -424,7 +424,11 @@ function parseProgressLines(text) {
     try {
       const payload = JSON.parse(trimmed.slice('PROGRESS:'.length).trim());
       if (payload.scope === 'package') {
-        updatePackageProgress(payload);
+        if (payload.step === 'summary') {
+          updatePackageProgressSummary(payload);
+        } else {
+          updatePackageProgress(payload);
+        }
       }
     } catch (_error) {
       // Ignore malformed progress lines; final reports still carry authoritative state.
@@ -465,6 +469,22 @@ function updatePackageProgress(payload) {
     percent: nextPercent
   });
   renderPackageProgress();
+}
+
+function updatePackageProgressSummary(payload) {
+  const apps = Array.isArray(payload.apps)
+    ? payload.apps
+    : Object.values(payload.apps || {});
+  if (apps.length === 0) {
+    return;
+  }
+  for (const item of apps) {
+    updatePackageProgress({
+      ...item,
+      status: item.status || progressStatusForStep(item.step),
+      message: item.message || progressLabelForStep(item.step)
+    });
+  }
 }
 
 function progressStatusForStep(step) {

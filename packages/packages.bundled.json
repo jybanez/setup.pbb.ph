@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "generated_for": "Project Bantay Bayan bundled app packages",
-  "generated_at": "2026-05-17T18:25:54.2472188Z",
+  "generated_at": "2026-05-17T19:04:26.8429972Z",
   "packages": [
     {
       "app_id": "pbb-mapserver",
@@ -26,7 +26,7 @@
       "version": "1.0.0",
       "source_type": "zip",
       "path": "bundled/pbb-realtime-1.0.0.zip",
-      "sha256": "5b717cdaa162c3f12e479e7685d1072fa4825acd404374b5478c16914dd24001",
+      "sha256": "17893b577dc75686478e8042c90c1e4a8e0bcda7346fd3762df158628a258145",
       "trusted": true,
       "signature_status": "local-trusted"
     },

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.32';
+    private const VERSION = '0.1.33';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.32';
+    private const DISPLAY_VERSION = 'v1-0.1.33';
     private ?string $progressFile = null;
 
     public function main(array $argv): int
@@ -891,8 +891,21 @@ final class KitSetupRunner
         $queue = $this->packageWorkerQueue($selectedApps);
         $active = [];
         $resultsByApp = [];
+        $progressByApp = [];
         $workerDir = $this->joinPath((string) $context['run_dir'], 'package-workers');
         $this->ensureDirectory($workerDir);
+        foreach ($selectedApps as $appId) {
+            if (is_string($appId) && $appId !== '') {
+                $progressByApp[$appId] = [
+                    'app_id' => $appId,
+                    'step' => 'pending',
+                    'status' => 'pending',
+                    'message' => 'Waiting for package preparation.',
+                    'percent' => 0,
+                ];
+            }
+        }
+        $lastSummaryAt = 0.0;
 
         while (count($queue) > 0 || count($active) > 0) {
             while (count($queue) > 0 && count($active) < $maxParallel) {
@@ -904,6 +917,14 @@ final class KitSetupRunner
                     'message' => 'Package worker started.',
                     'percent' => 1,
                 ]);
+                $progressByApp[$appId] = [
+                    'app_id' => $appId,
+                    'step' => 'worker-started',
+                    'status' => 'running',
+                    'message' => 'Package worker started.',
+                    'percent' => 1,
+                    'updated_at' => date(DATE_ATOM),
+                ];
                 $active[$appId] = $this->startPackageWorker(
                     $context,
                     $appId,
@@ -916,18 +937,17 @@ final class KitSetupRunner
                 $worker = $active[$appId];
                 $this->drainWorkerPipe($worker, 'stdout');
                 $this->drainWorkerPipe($worker, 'stderr');
-                $this->pollWorkerProgress($worker, $appId);
+                $progressPayload = $this->pollWorkerProgress($worker, $appId);
+                if (is_array($progressPayload)) {
+                    $progressByApp[$appId] = $this->mergePackageProgressState($progressByApp[$appId] ?? [], $progressPayload);
+                }
                 $status = proc_get_status($worker['process']);
                 if (($status['running'] ?? false) === true || !$this->workerPipesClosed($worker)) {
                     $now = time();
                     $lastHeartbeat = (int) ($worker['last_heartbeat_at'] ?? 0);
                     if ($now - $lastHeartbeat >= 3) {
-                        $startedAt = (int) ($worker['started_at'] ?? $now);
-                        $this->writeProgress('package', $appId, 'working', [
-                            'message' => 'Still extracting, verifying, or copying package files.',
-                            'elapsed_seconds' => max(0, $now - $startedAt),
-                            'percent' => 1,
-                        ]);
+                        $progressByApp[$appId]['elapsed_seconds'] = max(0, $now - (int) ($worker['started_at'] ?? $now));
+                        $progressByApp[$appId]['updated_at'] = date(DATE_ATOM);
                         $worker['last_heartbeat_at'] = $now;
                     }
                     $active[$appId] = $worker;
@@ -936,7 +956,10 @@ final class KitSetupRunner
 
                 $this->drainWorkerPipe($worker, 'stdout');
                 $this->drainWorkerPipe($worker, 'stderr');
-                $this->pollWorkerProgress($worker, $appId, true);
+                $progressPayload = $this->pollWorkerProgress($worker, $appId, true);
+                if (is_array($progressPayload)) {
+                    $progressByApp[$appId] = $this->mergePackageProgressState($progressByApp[$appId] ?? [], $progressPayload);
+                }
                 foreach ($worker['pipes'] as $pipe) {
                     if (is_resource($pipe)) {
                         fclose($pipe);
@@ -957,7 +980,21 @@ final class KitSetupRunner
                     $result['message'] = 'Package worker exited with code ' . $exitCode . '.';
                 }
                 $resultsByApp[$appId] = $result;
+                $progressByApp[$appId] = $this->mergePackageProgressState($progressByApp[$appId] ?? [], [
+                    'app_id' => $appId,
+                    'step' => ($result['status'] ?? '') === 'failed' ? 'failed' : 'complete',
+                    'status' => (string) ($result['status'] ?? 'failed'),
+                    'message' => (string) ($result['message'] ?? ((($result['status'] ?? '') === 'failed') ? 'Package preparation failed.' : 'Package is ready.')),
+                    'percent' => 100,
+                    'updated_at' => date(DATE_ATOM),
+                ]);
                 unset($active[$appId]);
+            }
+
+            $now = microtime(true);
+            if ($now - $lastSummaryAt >= 0.5 || count($active) === 0) {
+                $this->writePackageProgressSummary($selectedApps, $progressByApp);
+                $lastSummaryAt = $now;
             }
 
             if (count($active) > 0) {
@@ -999,6 +1036,8 @@ final class KitSetupRunner
         if ($script === '') {
             throw new RuntimeException('Unable to locate current runner script for package worker.');
         }
+        $stdoutPath = $reportPath . '.stdout.log';
+        $stderrPath = $reportPath . '.stderr.log';
         $command = [
             PHP_BINARY,
             $script,
@@ -1019,62 +1058,190 @@ final class KitSetupRunner
         ];
         $descriptorSpec = [
             0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
+            1 => ['file', $stdoutPath, 'a'],
+            2 => ['file', $stderrPath, 'a'],
         ];
         $process = proc_open(implode(' ', array_map([$this, 'escapeArg'], $command)), $descriptorSpec, $pipes, (string) getcwd());
         if (!is_resource($process)) {
             throw new RuntimeException('Unable to start package worker for ' . $appId);
         }
         fclose($pipes[0]);
-        stream_set_blocking($pipes[1], false);
-        stream_set_blocking($pipes[2], false);
         return [
             'process' => $process,
             'pipes' => $pipes,
             'report_path' => $reportPath,
             'progress_path' => $progressPath,
+            'stdout_path' => $stdoutPath,
+            'stderr_path' => $stderrPath,
+            'stdout_offset' => 0,
+            'stderr_offset' => 0,
             'last_progress_hash' => '',
             'started_at' => time(),
             'last_heartbeat_at' => 0,
         ];
     }
 
-    private function pollWorkerProgress(array &$worker, string $appId, bool $force = false): void
+    private function pollWorkerProgress(array &$worker, string $appId, bool $force = false): ?array
     {
         $path = (string) ($worker['progress_path'] ?? '');
         if ($path === '' || !is_file($path)) {
-            return;
+            return null;
         }
         $raw = file_get_contents($path);
         if (!is_string($raw) || trim($raw) === '') {
-            return;
+            return null;
         }
         $hash = sha1($raw);
         if (!$force && $hash === (string) ($worker['last_progress_hash'] ?? '')) {
-            return;
+            return null;
         }
         $payload = json_decode($raw, true);
         if (!is_array($payload)) {
-            return;
+            return null;
         }
         $worker['last_progress_hash'] = $hash;
         $step = (string) ($payload['step'] ?? 'working');
         unset($payload['scope'], $payload['app_id'], $payload['step']);
         $this->writeProgress('package', $appId, $step, $payload);
+        return array_merge([
+            'app_id' => $appId,
+            'step' => $step,
+        ], $payload);
     }
 
-    private function drainWorkerPipe(array $worker, string $name): void
+    private function mergePackageProgressState(array $current, array $next): array
+    {
+        $currentPercent = is_numeric($current['percent'] ?? null) ? (float) $current['percent'] : 0.0;
+        $nextPercent = is_numeric($next['percent'] ?? null) ? (float) $next['percent'] : $currentPercent;
+        $merged = array_merge($current, $next);
+        $merged['percent'] = max($currentPercent, $nextPercent);
+        if (!isset($merged['status']) || $merged['status'] === '') {
+            $step = (string) ($merged['step'] ?? '');
+            $merged['status'] = match ($step) {
+                'complete' => 'success',
+                'failed' => 'failed',
+                'pending' => 'pending',
+                default => 'running',
+            };
+        }
+        return $merged;
+    }
+
+    private function writePackageProgressSummary(array $selectedApps, array $progressByApp): void
+    {
+        $apps = [];
+        $complete = 0;
+        $failed = 0;
+        $running = 0;
+        $totalPercent = 0.0;
+        foreach ($selectedApps as $appId) {
+            if (!is_string($appId) || $appId === '') {
+                continue;
+            }
+            $progress = $progressByApp[$appId] ?? [
+                'app_id' => $appId,
+                'step' => 'pending',
+                'status' => 'pending',
+                'message' => 'Waiting for package preparation.',
+                'percent' => 0,
+            ];
+            $status = (string) ($progress['status'] ?? 'pending');
+            if ($status === 'success' || $status === 'failed') {
+                $complete++;
+                $totalPercent += 100;
+            } else {
+                $percent = is_numeric($progress['percent'] ?? null) ? (float) $progress['percent'] : 0.0;
+                $totalPercent += max(0.0, min(100.0, $percent));
+                if ($status === 'running') {
+                    $running++;
+                }
+            }
+            if ($status === 'failed') {
+                $failed++;
+            }
+            $apps[] = $progress;
+        }
+
+        $total = count($apps);
+        $overallPercent = $total > 0 ? (int) round($totalPercent / $total) : 0;
+        $this->writeLine('PROGRESS: ' . json_encode([
+            'scope' => 'package',
+            'step' => 'summary',
+            'complete' => $complete,
+            'failed' => $failed,
+            'running' => $running,
+            'total' => $total,
+            'overall_percent' => $overallPercent,
+            'apps' => $apps,
+            'updated_at' => date(DATE_ATOM),
+        ], JSON_UNESCAPED_SLASHES));
+    }
+
+    private function drainWorkerPipe(array &$worker, string $name): void
     {
         $index = $name === 'stderr' ? 2 : 1;
         $pipe = $worker['pipes'][$index] ?? null;
         if (!is_resource($pipe)) {
+            $this->drainWorkerLogFile($worker, $name);
             return;
         }
-        $chunk = stream_get_contents($pipe);
+        $chunk = '';
+        for ($i = 0; $i < 20; $i++) {
+            $part = fread($pipe, 8192);
+            if ($part === false || $part === '') {
+                break;
+            }
+            $chunk .= $part;
+            if (strlen($part) < 8192) {
+                break;
+            }
+        }
         if ($chunk === false || $chunk === '') {
             return;
         }
+        if ($name === 'stdout' && (string) ($worker['progress_path'] ?? '') !== '') {
+            $chunk = $this->removeProgressLines($chunk);
+            if ($chunk === '') {
+                return;
+            }
+        }
+        if ($name === 'stderr') {
+            fwrite(STDERR, $chunk);
+            fflush(STDERR);
+        } else {
+            fwrite(STDOUT, $chunk);
+            fflush(STDOUT);
+        }
+    }
+
+    private function drainWorkerLogFile(array &$worker, string $name): void
+    {
+        $pathKey = $name === 'stderr' ? 'stderr_path' : 'stdout_path';
+        $offsetKey = $name === 'stderr' ? 'stderr_offset' : 'stdout_offset';
+        $path = (string) ($worker[$pathKey] ?? '');
+        if ($path === '' || !is_file($path)) {
+            return;
+        }
+        $offset = (int) ($worker[$offsetKey] ?? 0);
+        $size = filesize($path);
+        if (!is_int($size) || $size <= $offset) {
+            return;
+        }
+        $handle = fopen($path, 'rb');
+        if (!is_resource($handle)) {
+            return;
+        }
+        try {
+            fseek($handle, $offset);
+            $chunk = stream_get_contents($handle, max(0, $size - $offset));
+        } finally {
+            fclose($handle);
+        }
+        if (!is_string($chunk) || $chunk === '') {
+            $worker[$offsetKey] = $size;
+            return;
+        }
+        $worker[$offsetKey] = $size;
         if ($name === 'stdout' && (string) ($worker['progress_path'] ?? '') !== '') {
             $chunk = $this->removeProgressLines($chunk);
             if ($chunk === '') {
@@ -1228,7 +1395,7 @@ final class KitSetupRunner
         $sourceType = (string) ($entry['source_type'] ?? 'archive');
         $packagePath = (string) ($entry['path'] ?? '');
         $trusted = ($entry['trusted'] ?? false) === true;
-        $targetPath = (string) ($appConfig['install_path'] ?? '');
+        $targetPath = (string) ($appConfig['release_path'] ?? $appConfig['install_path'] ?? '');
         if ($packagePath !== '' && !$this->isAbsolutePath($packagePath)) {
             $packagePath = $this->joinPath($manifestDir, $packagePath);
         }
