@@ -19,12 +19,18 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
   font-family: "Segoe UI", Arial, sans-serif;
   color: var(--text);
   background: var(--bg);
   letter-spacing: 0;
+  overflow: hidden;
 }
 
 button,
@@ -52,16 +58,20 @@ button:disabled {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   display: grid;
   grid-template-columns: 300px 1fr;
+  overflow: hidden;
 }
 
 .sidebar {
   background: #19252d;
   color: #f7fafc;
   padding: 22px;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .brand {
@@ -170,8 +180,11 @@ button:disabled {
 
 .workspace {
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   padding: 24px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .topbar {
