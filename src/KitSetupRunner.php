@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.27';
+    private const VERSION = '0.1.28';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.27';
+    private const DISPLAY_VERSION = 'v1-0.1.28';
 
     public function main(array $argv): int
     {
@@ -2828,9 +2828,17 @@ POWERSHELL
         $defaultApache = $this->findFirstGlobMatch('C:\\wamp64\\bin\\apache\\apache*\\bin\\httpd.exe');
         $defaultMysql = $this->findFirstGlobMatch('C:\\wamp64\\bin\\mariadb\\mariadb*\\bin\\mysql.exe')
             ?: $this->findFirstGlobMatch('C:\\wamp64\\bin\\mysql\\mysql*\\bin\\mysql.exe');
+        $apacheBinary = (string) ($platform['apache_binary'] ?? '');
+        if ($apacheBinary === '') {
+            $apacheBinary = $defaultApache;
+        }
+        $mysqlBinary = (string) ($platform['mysql_binary'] ?? '');
+        if ($mysqlBinary === '') {
+            $mysqlBinary = $defaultMysql;
+        }
         $checks = [
-            $this->inspectExecutableTool('apache', (string) ($platform['apache_binary'] ?? $defaultApache), ['-v']),
-            $this->inspectExecutableTool('mysql', (string) ($platform['mysql_binary'] ?? $defaultMysql), ['--version']),
+            $this->inspectExecutableTool('apache', $apacheBinary, ['-v']),
+            $this->inspectExecutableTool('mysql', $mysqlBinary, ['--version']),
             $this->inspectExecutableTool('ffmpeg', (string) ($platform['ffmpeg_binary'] ?? ''), ['-version']),
             $this->inspectExecutableTool('ffprobe', (string) ($platform['ffprobe_binary'] ?? ''), ['-version']),
         ];

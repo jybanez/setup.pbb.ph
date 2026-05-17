@@ -68,6 +68,8 @@ ipcMain.handle('kit:get-defaults', async () => ({
   repoRoot,
   configPath: defaultConfigPath,
   phpPath: findPhpBinary(),
+  apachePath: findApacheBinary(),
+  mysqlPath: findMysqlBinary(),
   caCertPath,
   caCertExists: fs.existsSync(caCertPath),
   userDataPath: app.getPath('userData'),
@@ -303,6 +305,49 @@ function findWampPhpCandidates() {
   } catch (_error) {
     return [];
   }
+}
+
+function findApacheBinary() {
+  const candidates = [
+    ...findWampToolCandidates('C:\\wamp64\\bin\\apache', 'apache', path.join('bin', 'httpd.exe')),
+    'C:\\xampp\\apache\\bin\\httpd.exe',
+    'C:\\Apache24\\bin\\httpd.exe'
+  ];
+  return firstExistingPath(candidates);
+}
+
+function findMysqlBinary() {
+  const candidates = [
+    ...findWampToolCandidates('C:\\wamp64\\bin\\mariadb', 'mariadb', path.join('bin', 'mysql.exe')),
+    ...findWampToolCandidates('C:\\wamp64\\bin\\mysql', 'mysql', path.join('bin', 'mysql.exe')),
+    'C:\\xampp\\mysql\\bin\\mysql.exe',
+    'C:\\Program Files\\MariaDB 11.2\\bin\\mysql.exe',
+    'C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysql.exe'
+  ];
+  return firstExistingPath(candidates);
+}
+
+function findWampToolCandidates(root, prefix, executableRelativePath) {
+  try {
+    if (!fs.existsSync(root)) {
+      return [];
+    }
+    return fs.readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.toLowerCase().startsWith(prefix))
+      .map((entry) => path.join(root, entry.name, executableRelativePath))
+      .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }));
+  } catch (_error) {
+    return [];
+  }
+}
+
+function firstExistingPath(candidates) {
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return '';
 }
 
 function resolvePhpForRun(phpPath) {

@@ -7,10 +7,18 @@ function buildRuntimeConfig(template, form) {
   const basePath = cleanString(form.basePath) || getNestedValue(config, ['layout', 'base_path']) || getNestedValue(config, ['paths', 'apps_base']);
   const machineIp = cleanString(form.machineIp) || getNestedValue(config, ['machine', 'ip_address']) || '127.0.0.1';
   const phpPath = cleanString(form.phpPath) || getNestedValue(config, ['runtime', 'php_binary']) || 'php';
+  const apachePath = cleanString(form.apachePath);
+  const mysqlPath = cleanString(form.mysqlPath);
   const selectedApps = normalizeAppScopes(form.appScopes);
 
   applyKitOwnedPaths(config, repoRoot, userDataPath, basePath);
   setNestedValue(config, ['runtime', 'php_binary'], phpPath);
+  if (apachePath !== '') {
+    setNestedValue(config, ['platform', 'apache_binary'], apachePath);
+  }
+  if (mysqlPath !== '') {
+    setNestedValue(config, ['platform', 'mysql_binary'], mysqlPath);
+  }
   setNestedValue(config, ['hub', 'hub_id'], toNumberOrExisting(form.hubId, getNestedValue(config, ['hub', 'hub_id'])));
   setNestedValue(config, ['hub', 'token_env'], 'PBB_HUB_TOKEN');
   setNestedValue(config, ['machine', 'ip_address'], machineIp);

@@ -22,6 +22,10 @@ const elements = {
   refreshButton: document.getElementById('refreshButton'),
   phpPathInput: document.getElementById('phpPathInput'),
   phpPathButton: document.getElementById('phpPathButton'),
+  apachePathInput: document.getElementById('apachePathInput'),
+  apachePathButton: document.getElementById('apachePathButton'),
+  mysqlPathInput: document.getElementById('mysqlPathInput'),
+  mysqlPathButton: document.getElementById('mysqlPathButton'),
   configPathInput: document.getElementById('configPathInput'),
   hubTokenInput: document.getElementById('hubTokenInput'),
   technitiumTokenInput: document.getElementById('technitiumTokenInput'),
@@ -122,6 +126,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   elements.kitSetupVersion.textContent = defaults.kitSetupVersion || '';
   applyLaunchMode(state.launchMode);
   elements.phpPathInput.value = defaults.phpPath;
+  elements.apachePathInput.value = defaults.apachePath || '';
+  elements.mysqlPathInput.value = defaults.mysqlPath || '';
   elements.configPathInput.value = defaults.configPath;
   elements.basePathInput.value = 'C:\\wamp64\\www\\pbb-node';
   elements.certRootInput.value = 'C:\\wamp64\\certs\\pbb.ph';
@@ -166,6 +172,8 @@ function bindEvents() {
   });
 
   elements.phpPathButton.addEventListener('click', () => choosePhpBinary());
+  elements.apachePathButton.addEventListener('click', () => chooseExecutable(elements.apachePathInput, 'Choose Apache httpd.exe'));
+  elements.mysqlPathButton.addEventListener('click', () => chooseExecutable(elements.mysqlPathInput, 'Choose MySQL/MariaDB mysql.exe'));
   elements.basePathButton.addEventListener('click', () => chooseFolder(elements.basePathInput, 'Choose App Base Path'));
   elements.certRootButton.addEventListener('click', () => chooseFolder(elements.certRootInput, 'Choose Certificate Folder'));
   elements.pemUploadButton.addEventListener('click', () => choosePemFile());
@@ -242,16 +250,20 @@ async function choosePemFile() {
 }
 
 async function choosePhpBinary() {
+  await chooseExecutable(elements.phpPathInput, 'Choose PHP Executable');
+}
+
+async function chooseExecutable(input, title) {
   const selected = await window.kitSetup.selectFile({
-    title: 'Choose PHP Executable',
-    defaultPath: elements.phpPathInput.value,
+    title,
+    defaultPath: input.value,
     filters: [
-      { name: 'PHP executable', extensions: ['exe'] },
+      { name: 'Executable', extensions: ['exe'] },
       { name: 'All files', extensions: ['*'] }
     ]
   });
   if (selected) {
-    elements.phpPathInput.value = selected;
+    input.value = selected;
     renderActiveStageValidation();
   }
 }
@@ -290,6 +302,8 @@ async function buildRuntimeConfig() {
 function collectSetupForm() {
   return {
     phpPath: elements.phpPathInput.value,
+    apachePath: elements.apachePathInput.value,
+    mysqlPath: elements.mysqlPathInput.value,
     hubId: elements.hubIdInput.value,
     basePath: elements.basePathInput.value,
     machineIp: elements.machineIpInput.value,
@@ -952,6 +966,12 @@ function validateStage(step) {
     }
     if (cleanValue(elements.configPathInput.value) === '') {
       fail('Select or build a runtime config file.');
+    }
+    if (cleanValue(elements.apachePathInput.value) === '') {
+      warn('Select Apache httpd.exe to avoid Apache detection warnings.');
+    }
+    if (cleanValue(elements.mysqlPathInput.value) === '') {
+      warn('Select MySQL/MariaDB mysql.exe to avoid database tool detection warnings.');
     }
   }
   if (step === 2) {
