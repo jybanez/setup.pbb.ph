@@ -1,3 +1,26 @@
+!macro deletePbbUninstallRegistryKeys
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\fa22339b-af82-5ce0-9613-338994187320"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ph.pbb.setup"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Project Bantay Bayan"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\pbb-kit-setup"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\fa22339b-af82-5ce0-9613-338994187320"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ph.pbb.setup"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Project Bantay Bayan"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\pbb-kit-setup"
+!macroend
+
+!macro cleanupPbbUninstallRegistry
+  SetRegView 64
+  !insertmacro deletePbbUninstallRegistryKeys
+
+  SetRegView 32
+  !insertmacro deletePbbUninstallRegistryKeys
+!macroend
+
+!macro customInit
+  !insertmacro cleanupPbbUninstallRegistry
+!macroend
+
 !macro customInstall
   CreateDirectory "$SMPROGRAMS\Project Bantay Bayan"
   CreateShortCut "$SMPROGRAMS\Project Bantay Bayan\Setup.lnk" "$INSTDIR\Project Bantay Bayan.exe" "--mode setup" "$INSTDIR\Project Bantay Bayan.exe" 0
@@ -12,21 +35,7 @@
   Delete "$SMPROGRAMS\Project Bantay Bayan\Data Prep.lnk"
   RMDir "$SMPROGRAMS\Project Bantay Bayan"
 
-  SetRegView 64
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ph.pbb.setup"
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Project Bantay Bayan"
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\pbb-kit-setup"
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ph.pbb.setup"
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Project Bantay Bayan"
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\pbb-kit-setup"
-
-  SetRegView 32
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ph.pbb.setup"
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Project Bantay Bayan"
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\pbb-kit-setup"
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\ph.pbb.setup"
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Project Bantay Bayan"
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\pbb-kit-setup"
+  !insertmacro cleanupPbbUninstallRegistry
 
   SetShellVarContext current
   RMDir /r "$APPDATA\pbb-kit-setup"

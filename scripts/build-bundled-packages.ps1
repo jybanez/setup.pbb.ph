@@ -136,10 +136,14 @@ function Add-DirectoryToZip {
 
     $zip = [System.IO.Compression.ZipFile]::Open($ZipPath, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
+        $manifestLines = @()
         Get-ChildItem -LiteralPath $SourceRoot -Recurse -File -Force |
             Where-Object { Test-IncludedFile -SourceRoot $SourceRoot -FullName $_.FullName } |
             ForEach-Object {
                 $entryName = (Get-RelativePath -BasePath $SourceRoot -TargetPath $_.FullName).Replace("\", "/")
+                if ($entryName -eq "checksums.sha256") {
+                    return
+                }
                 if ($AppId -eq "pbb-hotline" -and ($entryName -like "public/vendor/helpers.pbb.ph/*" -or $entryName -like "public/vendor/helpers.pbb.ph.git/*")) {
                     return
                 }
@@ -154,6 +158,7 @@ function Add-DirectoryToZip {
                     return
                 }
                 [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+                $manifestLines += "$(Get-Sha256Hex -Path $_.FullName)  $entryName"
             }
 
         if ($HelperRuntime -ne "") {
@@ -165,10 +170,28 @@ function Add-DirectoryToZip {
                     $relative = (Get-RelativePath -BasePath $HelperRuntime -TargetPath $_.FullName).Replace("\", "/")
                     $entryName = "public/vendor/helpers.pbb.ph/$relative"
                     [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+                    $manifestLines += "$(Get-Sha256Hex -Path $_.FullName)  $entryName"
                 }
         }
+
+        Add-ZipChecksumManifest -Zip $zip -ManifestLines ($manifestLines | Sort-Object)
     } finally {
         $zip.Dispose()
+    }
+}
+
+function Add-ZipChecksumManifest {
+    param(
+        [System.IO.Compression.ZipArchive] $Zip,
+        [string[]] $ManifestLines
+    )
+
+    $manifestEntry = $Zip.CreateEntry("checksums.sha256", [System.IO.Compression.CompressionLevel]::Optimal)
+    $writer = New-Object System.IO.StreamWriter($manifestEntry.Open(), (New-Object System.Text.UTF8Encoding($false)))
+    try {
+        $writer.Write(($manifestLines -join "`n") + "`n")
+    } finally {
+        $writer.Dispose()
     }
 }
 

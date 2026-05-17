@@ -1,13 +1,13 @@
 {
   "name": "pbb-kit-setup",
-  "version": "0.1.31",
+  "version": "0.1.32",
   "private": true,
   "description": "Project Bantay Bayan setup desktop installer shell",
   "main": "desktop/main.js",
   "pbb": {
     "milestone": 1,
-    "buildVersion": "0.1.31",
-    "displayVersion": "v1-0.1.31"
+    "buildVersion": "0.1.32",
+    "displayVersion": "v1-0.1.32"
   },
   "scripts": {
     "desktop": "electron .",
@@ -62,6 +62,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": false,
       "shortcutName": "Project Bantay Bayan",
+      "uninstallDisplayName": "Project Bantay Bayan",
       "include": "build/installer.nsh",
       "installerIcon": "assets/branding/app-icon.ico",
       "uninstallerIcon": "assets/branding/app-icon.ico",
