@@ -33,9 +33,10 @@ CLI harnesses should pass secrets through environment variables:
 $env:PBB_HUB_TOKEN = "<hub token>"
 $env:PBB_TECHNITIUM_TOKEN = "<technitium token>"
 $env:PBB_FIRST_ADMIN_PASSWORD = "<admin password>"
+$env:PBB_MYSQL_PASSWORD = "<database password>"
 ```
 
-Reports must redact token material. Generated runtime config and raw generated secrets stay under ignored `storage/`.
+Reports must redact token and password material. Generated runtime config and raw generated secrets stay under ignored `storage/`.
 
 ## Technitium DNS
 

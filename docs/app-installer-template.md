@@ -887,17 +887,18 @@ Kit Setup should call app installers in this pattern:
 
 1. Read each app `release.json`.
 2. Validate release compatibility against selected kit profile.
-3. Generate app unattended config JSON.
-4. Run `preflight` for all apps.
-5. Stop if any required preflight fails.
-6. Run each app installer in dependency order.
-7. Read each app report.
-8. Read each app install manifest.
-9. Register or present service artifacts.
-10. Run app population tools when explicitly enabled.
-11. Read each population report.
-12. Run final cross-app health checks.
-13. Write a Kit Setup report that links all app reports and population reports.
+3. Prepare trusted packages into selected local app folders.
+4. Generate app unattended config JSON.
+5. Run `preflight` for all local apps.
+6. Stop if any required preflight fails.
+7. Run each app installer in dependency order.
+8. Read each app report.
+9. Read each app install manifest.
+10. Register or present service artifacts.
+11. Configure DNS and SSL/web-server publishing.
+12. Run remote dependency and final cross-app health checks.
+13. Write a Kit Setup report that links all app reports.
+14. Run app population tools only through the separate post-install Data Prep workflow when explicitly enabled.
 
 Recommended Kit Setup run folder:
 

@@ -117,14 +117,14 @@ Recent note:
 - 2026-05-15 18:40 desktop installer shell scaffold added under `desktop/`. It renders the 12-step stage report, runs backend actions through the PHP runner, and passes runtime secrets through environment variables without saving them.
 - 2026-05-15 18:55 desktop runtime config builder added. Smoke test generated `storage\desktop-config-test\generated.json` with 3 local apps, 1 remote app, and 1 disabled app, then `stage-report` accepted it as `desktop_builder_stage_1`.
 - 2026-05-15 19:05 desktop confirmation gates added. Guarded actions now require an explicit modal acknowledgement before `prepare-packages`, `dns-apply`, `ssl-apply`, `install`, or `populate` runs.
-- 2026-05-15 19:15 desktop setup inputs split into focused panels tied to the selected stage. Hub token, Technitium token, and admin password are now shown only in their relevant stages.
+- 2026-05-15 19:15 desktop setup inputs split into focused panels tied to the selected stage. Hub token, Technitium token, database password, and admin password are shown only in relevant stages and are passed at runtime.
 - 2026-05-15 19:25 desktop per-stage validation added. Build/run actions now surface missing required inputs and focus the relevant stage before proceeding.
 - 2026-05-15 19:35 checkpoint smoke run `checkpoint_smoke_1` reused one run id across `detect`, `dns-plan`, and `stage-report`; `checkpoints.json` accumulated all three action states and the desktop shell can render the checkpoint grid.
 - 2026-05-15 19:45 app retry smoke run `app_retry_smoke_1` ran `preflight --app pbb-maestro`; only Maestro appeared in `kit-report.json`, and `checkpoints.json` recorded `app_filter=pbb-maestro`.
 - 2026-05-15 20:00 finish report smoke run reused `checkpoint_smoke_1`; `finish-report.json` summarized five app URLs/statuses, admin email, checkpoint/report paths, and expected follow-ups for an incomplete dry run.
 - 2026-05-15 22:26 local harness run `dns_verify_smoke_1` generated `dns-verify.json`. The resolver check correctly failed because the sample config expected `127.0.0.1` while the current network DNS resolves PBB hostnames to `192.168.254.x` addresses.
 - 2026-05-15 22:32 `ssl-apply` gained Apache config-test reporting after guarded include writes. Reload/restart remains manual until the service-control policy is finalized.
-- 2026-05-15 22:39 `npm run package:desktop:dir` produced the unpacked Windows bundle at `out\win-unpacked\PBB Kit Setup.exe`. Full NSIS packaging is configured but still needs production signing/branding decisions.
+- 2026-05-15 22:39 `npm run package:desktop:dir` produced the unpacked Windows bundle. The product name later changed to Project Bantay Bayan, with the executable at `out\win-unpacked\Project Bantay Bayan.exe`. Full NSIS packaging is configured; code signing remains a release-management task.
 - 2026-05-15 22:45 `smoke-check` added final app URL DNS/HTTP checks and is included in desktop checkpoints and finish follow-ups.
 - 2026-05-15 22:52 `detect` gained optional platform port checks for open infrastructure ports and available app bind ports.
 - 2026-05-15 22:58 `remote-check` gained optional bearer/header credential support using runtime-only token values, with redacted credential status in reports.

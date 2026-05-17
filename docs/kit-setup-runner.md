@@ -166,6 +166,19 @@ Before running it for a real install, replace all `REPLACE_WITH_...` placeholder
 
 Population sections are disabled by default in the example. Set an app's `*.populate.enabled` value to `true` only when the separate data preparation workflow should invoke that app's data tool. Population is not part of the required install path.
 
+The desktop setup also writes runtime platform and database choices into generated configs:
+
+- `runtime.php_binary`
+- `platform.apache_binary`
+- `platform.mysql_binary`
+- `shared.database.host`
+- `shared.database.port`
+- `shared.database.username`
+- `shared.database.password_env`
+- per-app `database.host`, `database.port`, `database.username`, and `database.password_env`
+
+Per-app database names remain app-owned, for example `pbb_maestro`, `pbb_realtime`, `pbb_relay`, and `pbb_hotline`.
+
 ## Hub Resolution
 
 Kit Setup can resolve the node identity from Hub before generating app configs. The visual installer should ask the installer for:
@@ -244,6 +257,26 @@ Kit Setup can keep the shared first-admin password out of checked-in config by u
 ```
 
 During a run, `password_env` is resolved into the per-app generated `admin.password` value. The generated app config stays under ignored `storage/runs/`.
+
+## Database Password
+
+Kit Setup can keep the shared database password out of generated desktop config by using:
+
+```json
+{
+  "shared": {
+    "database": {
+      "driver": "mysql",
+      "host": "127.0.0.1",
+      "port": 3306,
+      "username": "root",
+      "password_env": "PBB_MYSQL_PASSWORD"
+    }
+  }
+}
+```
+
+During a run, `password_env` is resolved into the per-app generated `database.password` value. Generated app configs remain under ignored `storage/runs/`. The desktop shell passes this value as a runtime environment variable, not as a saved desktop config value.
 
 ## Shared Secrets
 
@@ -427,7 +460,22 @@ The report writes `smoke-check.json` with DNS results, HTTP status, expected sta
 
 ## Visual Stage Report
 
-`stage-report` writes `stage-report.json` with one object for each step in the 12-step non-technical setup flow. It is non-destructive: it uses the safe planners and checks, then marks install and finish stages as `pending` until the administrator confirms.
+`stage-report` writes `stage-report.json` with one object for each step in the 12-step non-technical setup flow. It is non-destructive: it uses the safe planners and checks, then marks app preflight, app install, and finish stages as `pending` until the administrator confirms or runs those actions.
+
+Current visual stage order:
+
+1. Platform Check
+2. Hub Pairing
+3. Select Apps
+4. Choose Base Path
+5. Admin & Database
+6. Prepare Trusted App Packages
+7. Preflight Apps
+8. Install Apps
+9. Network & Local DNS
+10. SSL & Web Server
+11. Remote & Smoke Checks
+12. Finish
 
 The stage statuses are intended for a wizard UI:
 

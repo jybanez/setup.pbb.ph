@@ -13,8 +13,10 @@ The shell does not duplicate installer logic. It calls the PHP runner actions an
 ## Current Capabilities
 
 - Shows the 12-step setup stage list.
-- Provides stage inputs for Hub ID, app local/remote/off scope, base path, DNS, SSL/Apache, and first admin password.
+- Provides stage inputs for platform executable paths, Hub ID, app local/remote/off scope, base path, admin/database credentials, DNS, and SSL/Apache.
 - Shows only the inputs relevant to the selected setup stage.
+- Shows the Kit Setup version in the sidebar.
+- Keeps the sidebar and main content scroll areas independent.
 - Shows per-stage validation and inline recovery guidance.
 - Shows same-run action checkpoints for retry/resume visibility.
 - Shows a finish summary with app links, admin email, report paths, and follow-ups.
@@ -27,20 +29,22 @@ The shell does not duplicate installer logic. It calls the PHP runner actions an
   - `hub-resolve`
   - `plan`
   - `prepare-packages`
+  - `preflight`
+  - `install`
   - `dns-plan`
   - `dns-apply`
+  - `dns-client-apply`
   - `dns-verify`
   - `ssl-plan`
   - `ssl-apply`
   - `remote-check`
-  - `preflight`
-  - `install`
-  - `populate` / Data Prep
   - `smoke-check`
+  - `populate` / Data Prep
   - `finish-report`
-- Accepts Hub token, Technitium token, and admin password as runtime-only fields.
+- Accepts Hub token, Technitium token, first-admin password, and database password as runtime-only fields.
 - Passes runtime secrets through environment variables.
 - Does not save tokens or passwords.
+- Labels action buttons with the stage number they belong to, such as `6 Packages`, `7 Preflight`, `8 Install`, `9 Apply DNS`, `10 Apply SSL`, and `12 Finish`.
 
 ## Confirmation Gates
 
@@ -48,6 +52,7 @@ The shell blocks these actions behind a confirmation modal:
 
 - `prepare-packages`
 - `dns-apply`
+- `dns-client-apply`
 - `ssl-apply`
 - `install`
 - `populate` / Data Prep
@@ -59,12 +64,13 @@ The modal summarizes the current config state, such as `packages.dry_run`, `dns.
 The renderer validates key setup inputs before building runtime config or running actions:
 
 - PHP/config path for platform checks.
+- Apache `httpd.exe` and MySQL/MariaDB `mysql.exe` paths are accepted in the platform stage to avoid stale template path warnings.
 - Hub ID and Hub token for Hub pairing.
 - At least one local app for app selection.
 - Base path for local installation.
+- Database host, port, username, and first administrator password before app preflight/install/data preparation.
 - Machine IP/host, DNS zone, Technitium URL, and token when DNS apply is enabled.
 - Certificate folder or PEM bundle, plus Apache include target when web-server apply is enabled.
-- First administrator password length before install/data preparation.
 
 These checks are UI guidance only. Backend runner actions still perform the authoritative validation and write reports.
 
@@ -120,7 +126,7 @@ npm run package:desktop:dir
 The output is:
 
 ```text
-out\win-unpacked\PBB Kit Setup.exe
+out\win-unpacked\Project Bantay Bayan.exe
 ```
 
 A full NSIS installer target is configured for later release packaging:
@@ -129,7 +135,7 @@ A full NSIS installer target is configured for later release packaging:
 npm run package:desktop:win
 ```
 
-Production installer output still needs final icon, signing certificate, release naming, and bundled trusted app release archive policy.
+Production installer output uses the Project Bantay Bayan branding and bundled trusted app packages. Code-signing certificate procurement is still a release-management task.
 
 ## Backend Contract
 
@@ -158,10 +164,10 @@ Generated desktop configs are written under:
 storage/desktop-configs/
 ```
 
-These files may contain machine paths and non-secret setup choices, but not the raw Hub token, Technitium token, or first-admin password.
+These files may contain machine paths and non-secret setup choices, but not the raw Hub token, Technitium token, database password, or first-admin password.
 
 ## Next UI Work
 
 - Add richer per-action previews from the latest plan reports.
-- Add packaged runtime detection for Windows and Linux.
+- Add packaged runtime detection for Linux.
 - Add production release branding, signing, and update policy.

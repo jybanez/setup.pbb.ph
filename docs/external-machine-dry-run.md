@@ -31,6 +31,7 @@ PowerShell:
 $env:PBB_HUB_TOKEN = "<hub token>"
 $env:PBB_TECHNITIUM_TOKEN = "<technitium token>"
 $env:PBB_FIRST_ADMIN_PASSWORD = "<temporary admin password>"
+$env:PBB_MYSQL_PASSWORD = "<database password>"
 ```
 
 Bash:
@@ -39,6 +40,7 @@ Bash:
 export PBB_HUB_TOKEN="<hub token>"
 export PBB_TECHNITIUM_TOKEN="<technitium token>"
 export PBB_FIRST_ADMIN_PASSWORD="<temporary admin password>"
+export PBB_MYSQL_PASSWORD="<database password>"
 ```
 
 ## Recommended Command Order
@@ -54,10 +56,12 @@ $config = "C:\wamp64\www\pbb\kit-setup\examples\kit-config.local-all.example.jso
 & $php $kit --config $config --action stage-report --run-id dryrun_stage
 & $php $kit --config $config --action plan --run-id dryrun_plan
 & $php $kit --config $config --action prepare-packages --run-id dryrun_packages
+& $php $kit --config $config --action preflight --run-id dryrun_preflight
 & $php $kit --config $config --action dns-plan --run-id dryrun_dns
 & $php $kit --config $config --action dns-verify --run-id dryrun_dns_verify
 & $php $kit --config $config --action ssl-plan --run-id dryrun_ssl
 & $php $kit --config $config --action remote-check --run-id dryrun_remote
+& $php $kit --config $config --action smoke-check --run-id dryrun_smoke
 ```
 
 Linux example:
@@ -67,9 +71,11 @@ php /opt/pbb/kit-setup/bin/kit-setup.php --config /opt/pbb/kit-setup/examples/ki
 php /opt/pbb/kit-setup/bin/kit-setup.php --config /opt/pbb/kit-setup/examples/kit-config.local-all.example.json --action stage-report --run-id dryrun_stage
 php /opt/pbb/kit-setup/bin/kit-setup.php --config /opt/pbb/kit-setup/examples/kit-config.local-all.example.json --action plan --run-id dryrun_plan
 php /opt/pbb/kit-setup/bin/kit-setup.php --config /opt/pbb/kit-setup/examples/kit-config.local-all.example.json --action prepare-packages --run-id dryrun_packages
+php /opt/pbb/kit-setup/bin/kit-setup.php --config /opt/pbb/kit-setup/examples/kit-config.local-all.example.json --action preflight --run-id dryrun_preflight
 php /opt/pbb/kit-setup/bin/kit-setup.php --config /opt/pbb/kit-setup/examples/kit-config.local-all.example.json --action dns-plan --run-id dryrun_dns
 php /opt/pbb/kit-setup/bin/kit-setup.php --config /opt/pbb/kit-setup/examples/kit-config.local-all.example.json --action ssl-plan --run-id dryrun_ssl
 php /opt/pbb/kit-setup/bin/kit-setup.php --config /opt/pbb/kit-setup/examples/kit-config.local-all.example.json --action remote-check --run-id dryrun_remote
+php /opt/pbb/kit-setup/bin/kit-setup.php --config /opt/pbb/kit-setup/examples/kit-config.local-all.example.json --action smoke-check --run-id dryrun_smoke
 ```
 
 ## Reports To Review
@@ -86,10 +92,12 @@ Key reports:
 - `stage-report.json`
 - `kit-report.json`
 - `package-report.json`
+- app preflight reports under `apps/`
 - `dns-plan.json`
 - `dns-verify.json`
 - `ssl-plan.json`
 - `remote-check.json`
+- smoke check report
 
 Do not enable `dns.update_mode=apply`, `ssl.web_server_update_mode=apply`, or `packages.dry_run=false` until these reports look correct.
 
