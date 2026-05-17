@@ -231,6 +231,7 @@ ipcMain.handle('kit:run-action', async (event, request) => {
     });
   }
   const processResult = await runProcess(resolvedPhpPath, args, env, {
+    timeoutMs: runnerTimeoutForAction(action),
     onStdout: (text) => {
       if (!event || !event.sender || event.sender.isDestroyed()) {
         return;
@@ -314,6 +315,38 @@ function resolvePhpForRun(phpPath) {
     }
   }
   return trimmed;
+}
+
+function runnerTimeoutForAction(action) {
+  const quickActions = new Set([
+    'detect',
+    'hub-resolve',
+    'stage-report',
+    'finish-report',
+    'plan',
+    'dns-plan',
+    'dns-apply',
+    'dns-client-apply',
+    'dns-verify',
+    'ssl-plan',
+    'ssl-apply',
+    'remote-check',
+    'smoke-check',
+    'preflight'
+  ]);
+  const longActions = new Set([
+    'prepare-packages',
+    'install',
+    'populate'
+  ]);
+
+  if (quickActions.has(action)) {
+    return 120000;
+  }
+  if (longActions.has(action)) {
+    return 1800000;
+  }
+  return 300000;
 }
 
 function buildRuntimeEnv(secrets) {
@@ -456,7 +489,8 @@ function describeAction(action, config) {
 
 function runProcess(command, args, env, hooks = {}) {
   return new Promise((resolve) => {
-    console.log('[KitSetup:main] process:start', { command, args });
+    const timeoutMs = Number(hooks.timeoutMs || 300000);
+    console.log('[KitSetup:main] process:start', { command, args, timeoutMs });
     const child = spawn(command, args, {
       cwd: repoRoot,
       env,
@@ -464,6 +498,35 @@ function runProcess(command, args, env, hooks = {}) {
     });
     let stdout = '';
     let stderr = '';
+    let settled = false;
+
+    const finish = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+
+    const timer = setTimeout(() => {
+      const text = `Runner process timed out after ${timeoutMs} ms: ${command} ${args.join(' ')}\n`;
+      stderr += text;
+      console.error('[KitSetup:main] process:timeout', { command, args, timeoutMs });
+      if (typeof hooks.onStderr === 'function') {
+        hooks.onStderr(text);
+      }
+      try {
+        child.kill('SIGKILL');
+      } catch (error) {
+        stderr += `${error.message}\n`;
+      }
+      finish({
+        exitCode: 124,
+        stdout: stdout.trim(),
+        stderr: stderr.trim()
+      });
+    }, timeoutMs);
 
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
@@ -483,15 +546,15 @@ function runProcess(command, args, env, hooks = {}) {
     });
     child.on('error', (error) => {
       console.error('[KitSetup:main] process:error', error);
-      resolve({
+      finish({
         exitCode: 1,
-        stdout,
-        stderr: stderr + error.message
+        stdout: stdout.trim(),
+        stderr: (stderr + error.message).trim()
       });
     });
     child.on('close', (exitCode) => {
       console.log('[KitSetup:main] process:close', { exitCode });
-      resolve({
+      finish({
         exitCode,
         stdout: stdout.trim(),
         stderr: stderr.trim()
