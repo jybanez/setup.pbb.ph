@@ -1,52 +1,52 @@
 {
-    "schema_version":  1,
-    "generated_for":  "Project Bantay Bayan bundled app packages",
-    "generated_at":  "2026-05-16T17:16:44.8644394Z",
-    "packages":  [
-                     {
-                         "app_id":  "pbb-mapserver",
-                         "version":  "1.0.0",
-                         "source_type":  "zip",
-                         "path":  "bundled/pbb-mapserver-1.0.0.zip",
-                         "sha256":  "198b4d38027187a059302a41d74bc79d8df5a5ed7b10be7f2b1038d7f9f8b0d2",
-                         "trusted":  true,
-                         "signature_status":  "local-trusted"
-                     },
-                     {
-                         "app_id":  "pbb-maestro",
-                         "version":  "1.0.0",
-                         "source_type":  "zip",
-                         "path":  "bundled/pbb-maestro-1.0.0.zip",
-                         "sha256":  "33157c618da54a78ee7c63d97b9566435fe7f5e8b76f7192aa4393fa3b97c29f",
-                         "trusted":  true,
-                         "signature_status":  "local-trusted"
-                     },
-                     {
-                         "app_id":  "pbb-realtime",
-                         "version":  "1.0.0",
-                         "source_type":  "zip",
-                         "path":  "bundled/pbb-realtime-1.0.0.zip",
-                         "sha256":  "d8638362836b7638b96c68bf30d5a7c7020a8c5ba73e6178aa164201e04e3a4b",
-                         "trusted":  true,
-                         "signature_status":  "local-trusted"
-                     },
-                     {
-                         "app_id":  "pbb-relay",
-                         "version":  "1.1.0",
-                         "source_type":  "zip",
-                         "path":  "bundled/pbb-relay-1.1.0.zip",
-                         "sha256":  "7d78c0456a4ade5736c8baebeb0be849c9b64b32feff569105139f74123f96ac",
-                         "trusted":  true,
-                         "signature_status":  "local-trusted"
-                     },
-                     {
-                         "app_id":  "pbb-hotline",
-                         "version":  "5.6.1",
-                         "source_type":  "zip",
-                         "path":  "bundled/pbb-hotline-5.6.1.zip",
-                         "sha256":  "e56ebc8880234cd5032b266797eb748f247b92d6e29de7a0f85413af858f1d1b",
-                         "trusted":  true,
-                         "signature_status":  "local-trusted"
-                     }
-                 ]
+  "schema_version": 1,
+  "generated_for": "Project Bantay Bayan bundled app packages",
+  "generated_at": "2026-05-17T07:43:15.9987403Z",
+  "packages": [
+    {
+      "app_id": "pbb-mapserver",
+      "version": "1.0.0",
+      "source_type": "zip",
+      "path": "bundled/pbb-mapserver-1.0.0.zip",
+      "sha256": "198b4d38027187a059302a41d74bc79d8df5a5ed7b10be7f2b1038d7f9f8b0d2",
+      "trusted": true,
+      "signature_status": "local-trusted"
+    },
+    {
+      "app_id": "pbb-maestro",
+      "version": "1.0.0",
+      "source_type": "zip",
+      "path": "bundled/pbb-maestro-1.0.0.zip",
+      "sha256": "68f7cb72c59327a7fb844e5bb8b9399bca07bdc4ea503ec68bf0e9a3df9f201d",
+      "trusted": true,
+      "signature_status": "local-trusted"
+    },
+    {
+      "app_id": "pbb-realtime",
+      "version": "1.0.0",
+      "source_type": "zip",
+      "path": "bundled/pbb-realtime-1.0.0.zip",
+      "sha256": "d8638362836b7638b96c68bf30d5a7c7020a8c5ba73e6178aa164201e04e3a4b",
+      "trusted": true,
+      "signature_status": "local-trusted"
+    },
+    {
+      "app_id": "pbb-relay",
+      "version": "1.1.0",
+      "source_type": "zip",
+      "path": "bundled/pbb-relay-1.1.0.zip",
+      "sha256": "7d78c0456a4ade5736c8baebeb0be849c9b64b32feff569105139f74123f96ac",
+      "trusted": true,
+      "signature_status": "local-trusted"
+    },
+    {
+      "app_id": "pbb-hotline",
+      "version": "5.6.1",
+      "source_type": "zip",
+      "path": "bundled/pbb-hotline-5.6.1.zip",
+      "sha256": "e56ebc8880234cd5032b266797eb748f247b92d6e29de7a0f85413af858f1d1b",
+      "trusted": true,
+      "signature_status": "local-trusted"
+    }
+  ]
 }
