@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.16';
+    private const VERSION = '0.1.17';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.16';
+    private const DISPLAY_VERSION = 'v1-0.1.17';
 
     public function main(array $argv): int
     {
@@ -765,7 +765,7 @@ final class KitSetupRunner
         $entries = $this->normalizePackageEntries($manifest['packages'] ?? []);
         $selectedApps = $this->selectedLocalAppIds($config);
         $allowedTargetRoots = $this->packageTargetRoots($config);
-        $configuredMaxParallel = max(1, min(5, (int) ($packageConfig['max_parallel'] ?? 3)));
+        $configuredMaxParallel = max(1, min(5, (int) ($packageConfig['max_parallel'] ?? 1)));
         $maxParallel = $dryRun ? 1 : $configuredMaxParallel;
 
         $totalApps = count($selectedApps);
