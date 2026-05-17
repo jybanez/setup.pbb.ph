@@ -70,7 +70,8 @@ ipcMain.handle('kit:get-defaults', async () => ({
   caCertPath,
   caCertExists: fs.existsSync(caCertPath),
   userDataPath: app.getPath('userData'),
-  launchMode
+  launchMode,
+  devToolsEnabled
 }));
 
 function getLaunchMode() {
@@ -131,6 +132,10 @@ ipcMain.handle('kit:select-file', async (_event, request) => {
 });
 
 ipcMain.handle('kit:build-config', async (_event, request) => {
+  console.log('[KitSetup:main] build-config:start', {
+    templatePath: String(request.templatePath || defaultConfigPath),
+    userDataPath: app.getPath('userData')
+  });
   const templatePath = String(request.templatePath || defaultConfigPath);
   const template = readJsonIfExists(templatePath);
   if (!template) {
@@ -147,6 +152,7 @@ ipcMain.handle('kit:build-config', async (_event, request) => {
   fs.mkdirSync(configDir, { recursive: true });
   const configPath = path.join(configDir, `kit-config-${Date.now()}.json`);
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  console.log('[KitSetup:main] build-config:done', { configPath });
   return { configPath, config };
 });
 
@@ -162,6 +168,11 @@ ipcMain.handle('kit:describe-action', async (_event, request) => {
 
 ipcMain.handle('kit:run-action', async (event, request) => {
   const action = String(request.action || '');
+  console.log('[KitSetup:main] run-action:start', {
+    action,
+    configPath: String(request.configPath || defaultConfigPath),
+    runId: String(request.runId || '')
+  });
   const allowedActions = new Set([
     'detect',
     'hub-resolve',
@@ -204,6 +215,21 @@ ipcMain.handle('kit:run-action', async (event, request) => {
   }
 
   const resolvedPhpPath = resolvePhpForRun(phpPath);
+  const debugStart = {
+    action,
+    php: resolvedPhpPath,
+    args,
+    configPath,
+    runId
+  };
+  console.log('[KitSetup:main] run-action:spawn', debugStart);
+  if (event && event.sender && !event.sender.isDestroyed()) {
+    event.sender.send('kit:runner-output', {
+      action,
+      stream: 'debug',
+      text: `DEBUG main spawn ${JSON.stringify(debugStart)}\n`
+    });
+  }
   const processResult = await runProcess(resolvedPhpPath, args, env, {
     onStdout: (text) => {
       if (!event || !event.sender || event.sender.isDestroyed()) {
@@ -222,6 +248,15 @@ ipcMain.handle('kit:run-action', async (event, request) => {
   const report = readJsonIfExists(reportPath);
   const checkpointPath = getCheckpointPath(configPath, runId);
   const checkpoints = readJsonIfExists(checkpointPath);
+  console.log('[KitSetup:main] run-action:done', {
+    action,
+    runId,
+    exitCode: processResult.exitCode,
+    reportPath,
+    hasReport: Boolean(report),
+    checkpointPath,
+    hasCheckpoints: Boolean(checkpoints)
+  });
   return {
     action,
     runId,
@@ -421,6 +456,7 @@ function describeAction(action, config) {
 
 function runProcess(command, args, env, hooks = {}) {
   return new Promise((resolve) => {
+    console.log('[KitSetup:main] process:start', { command, args });
     const child = spawn(command, args, {
       cwd: repoRoot,
       env,
@@ -432,6 +468,7 @@ function runProcess(command, args, env, hooks = {}) {
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
       stdout += text;
+      console.log('[KitSetup:main] process:stdout', text.trimEnd());
       if (typeof hooks.onStdout === 'function') {
         hooks.onStdout(text);
       }
@@ -439,11 +476,13 @@ function runProcess(command, args, env, hooks = {}) {
     child.stderr.on('data', (chunk) => {
       const text = chunk.toString();
       stderr += text;
+      console.warn('[KitSetup:main] process:stderr', text.trimEnd());
       if (typeof hooks.onStderr === 'function') {
         hooks.onStderr(text);
       }
     });
     child.on('error', (error) => {
+      console.error('[KitSetup:main] process:error', error);
       resolve({
         exitCode: 1,
         stdout,
@@ -451,6 +490,7 @@ function runProcess(command, args, env, hooks = {}) {
       });
     });
     child.on('close', (exitCode) => {
+      console.log('[KitSetup:main] process:close', { exitCode });
       resolve({
         exitCode,
         stdout: stdout.trim(),

@@ -8,7 +8,8 @@ const state = {
   packageProgress: new Map(),
   packageProgressWidget: null,
   helperProgressFactory: null,
-  helperProgressLoad: null
+  helperProgressLoad: null,
+  debug: false
 };
 
 const elements = {
@@ -107,7 +108,10 @@ const appOptions = [
 const guardedActions = new Set(['prepare-packages', 'dns-apply', 'dns-client-apply', 'ssl-apply', 'install', 'populate']);
 
 window.addEventListener('DOMContentLoaded', async () => {
+  debugLog('dom:loaded:start');
   const defaults = await window.kitSetup.getDefaults();
+  state.debug = Boolean(defaults.devToolsEnabled);
+  debugLog('defaults', defaults);
   state.templateConfigPath = defaults.configPath;
   state.launchMode = defaults.launchMode || 'setup';
   applyLaunchMode(state.launchMode);
@@ -127,6 +131,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (window.kitSetup.onRunnerOutput) {
     window.kitSetup.onRunnerOutput(handleRunnerOutput);
   }
+  debugLog('dom:loaded:done');
 });
 
 function applyLaunchMode(mode) {
@@ -144,7 +149,9 @@ function applyLaunchMode(mode) {
 }
 
 function bindEvents() {
+  debugLog('bind-events:start');
   elements.chooseConfigButton.addEventListener('click', async () => {
+    debugLog('config:choose:click');
     const selected = await window.kitSetup.selectConfig();
     if (selected) {
       state.templateConfigPath = selected;
@@ -157,7 +164,10 @@ function bindEvents() {
   elements.certRootButton.addEventListener('click', () => chooseFolder(elements.certRootInput, 'Choose Certificate Folder'));
   elements.pemUploadButton.addEventListener('click', () => choosePemFile());
   elements.buildConfigButton.addEventListener('click', () => buildRuntimeConfig());
-  elements.refreshButton.addEventListener('click', () => runAction('stage-report'));
+  elements.refreshButton.addEventListener('click', () => {
+    debugLog('run-checks:click');
+    runAction('stage-report');
+  });
   elements.confirmCancelButton.addEventListener('click', () => closeConfirmation());
   elements.confirmCheckbox.addEventListener('change', () => {
     elements.confirmRunButton.disabled = !elements.confirmCheckbox.checked;
@@ -171,13 +181,17 @@ function bindEvents() {
   });
 
   document.querySelectorAll('[data-action]').forEach((button) => {
-    button.addEventListener('click', () => runAction(button.dataset.action));
+    button.addEventListener('click', () => {
+      debugLog('action-button:click', { action: button.dataset.action });
+      runAction(button.dataset.action);
+    });
   });
 
   document.querySelectorAll('input').forEach((input) => {
     input.addEventListener('input', () => renderActiveStageValidation());
     input.addEventListener('change', () => renderActiveStageValidation());
   });
+  debugLog('bind-events:done');
 }
 
 function renderAppScopeControls() {
@@ -298,11 +312,14 @@ function collectAppScopes() {
 }
 
 async function runAction(action, options = {}) {
+  debugLog('run-action:enter', { action, options, busy: state.busy });
   if (state.busy) {
+    debugLog('run-action:ignored-busy', { action });
     return;
   }
 
   const validation = validateAction(action);
+  debugLog('run-action:validation', validation);
   if (validation.blocking.length > 0) {
     focusFirstInvalidStage(validation.blocking[0]);
     appendOutput(`Cannot run ${action}: ${validation.blocking[0].issues[0]}`);
@@ -310,6 +327,7 @@ async function runAction(action, options = {}) {
   }
 
   if (guardedActions.has(action) && options.confirmed !== true) {
+    debugLog('run-action:confirmation-required', { action });
     await requestActionConfirmation(action, options);
     return;
   }
@@ -320,30 +338,49 @@ async function runAction(action, options = {}) {
     resetPackageProgress();
   }
   setBusy(true);
+  debugLog('run-action:busy-set', { action });
   appendOutput(`Running ${action}...`);
 
   try {
+    debugLog('run-action:build-config:start', { action });
     await buildRuntimeConfigForAction();
-    const result = await window.kitSetup.runAction({
+    debugLog('run-action:build-config:done', { action, configPath: elements.configPathInput.value });
+    const request = {
       action,
       phpPath: elements.phpPathInput.value,
       configPath: elements.configPathInput.value,
       runId: `${action.replace(/[^a-z0-9]+/gi, '_')}_${Date.now()}`,
       appId: options.appId || '',
       secrets: collectSecrets()
+    };
+    debugLog('run-action:ipc:start', {
+      ...request,
+      secrets: Object.fromEntries(Object.entries(request.secrets).map(([key, value]) => [key, Boolean(value)]))
+    });
+    const result = await window.kitSetup.runAction(request);
+    debugLog('run-action:ipc:done', {
+      action,
+      exitCode: result.exitCode,
+      reportPath: result.reportPath,
+      hasReport: Boolean(result.report),
+      hasCheckpoints: Boolean(result.checkpoints)
     });
     renderRunResult(result);
   } catch (error) {
+    debugLog('run-action:error', { action, message: error.message, stack: error.stack });
     appendOutput(`ERROR: ${error.message}`);
   } finally {
     state.busy = false;
     state.activeAction = null;
     setBusy(false);
+    debugLog('run-action:finally', { action, busy: state.busy });
   }
 }
 
 function handleRunnerOutput(payload) {
+  debugLog('runner-output:received', payload);
   if (!payload || payload.action !== state.activeAction) {
+    debugLog('runner-output:ignored', { activeAction: state.activeAction, payloadAction: payload && payload.action });
     return;
   }
   const text = String(payload.text || '');
@@ -515,12 +552,16 @@ function renderHelperPackageProgress(done, total, label) {
 }
 
 async function buildRuntimeConfigForAction() {
+  debugLog('build-config-for-action:start', {
+    templatePath: state.templateConfigPath || elements.configPathInput.value
+  });
   const result = await window.kitSetup.buildConfig({
     templatePath: state.templateConfigPath || elements.configPathInput.value,
     form: collectSetupForm()
   });
   elements.configPathInput.value = result.configPath;
   elements.configBuildStatus.textContent = 'Runtime config ready';
+  debugLog('build-config-for-action:done', { configPath: result.configPath });
   return result;
 }
 
@@ -572,6 +613,13 @@ function collectSecrets() {
 }
 
 function renderRunResult(result) {
+  debugLog('render-run-result:start', {
+    action: result.action,
+    exitCode: result.exitCode,
+    reportPath: result.reportPath,
+    hasReport: Boolean(result.report),
+    hasCheckpoints: Boolean(result.checkpoints)
+  });
   const output = [
     result.stdout,
     result.stderr ? `ERR: ${result.stderr}` : ''
@@ -586,6 +634,7 @@ function renderRunResult(result) {
     setStages(result.report.stages);
     renderSummary(result.report);
     renderCheckpoints(result.report.checkpoints || result.checkpoints, result.checkpointPath);
+    debugLog('render-run-result:stage-report-done', { action: result.action });
     return;
   }
 
@@ -599,6 +648,7 @@ function renderRunResult(result) {
     }
     renderGenericReport(result.action, result.report);
   }
+  debugLog('render-run-result:done', { action: result.action });
 }
 
 function renderPackageReport(report) {
@@ -1012,12 +1062,24 @@ function markSelectedStage() {
 }
 
 function setBusy(isBusy) {
+  debugLog('busy:set', { isBusy });
   document.body.classList.toggle('busy', isBusy);
   elements.refreshButton.disabled = isBusy;
   document.querySelectorAll('[data-action]').forEach((button) => {
     button.disabled = isBusy;
   });
   elements.buildConfigButton.disabled = isBusy;
+}
+
+function debugLog(message, data = undefined) {
+  if (!state.debug && !String(window.location.search || '').includes('debug=1')) {
+    return;
+  }
+  if (data === undefined) {
+    console.log(`[KitSetup] ${message}`);
+    return;
+  }
+  console.log(`[KitSetup] ${message}`, data);
 }
 
 function appendOutput(text) {
