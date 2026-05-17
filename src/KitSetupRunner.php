@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.21';
+    private const VERSION = '0.1.22';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.21';
+    private const DISPLAY_VERSION = 'v1-0.1.22';
 
     public function main(array $argv): int
     {
@@ -3674,6 +3674,11 @@ POWERSHELL
                 throw new RuntimeException('Duplicate app id in kit config: ' . $id);
             }
 
+            $scope = (string) ($appConfig['install_scope'] ?? 'local');
+            if ($scope !== 'local') {
+                continue;
+            }
+
             $releasePath = (string) ($appConfig['release_path'] ?? '');
             if ($releasePath === '' || !is_dir($releasePath)) {
                 throw new RuntimeException("Release path for {$id} must be an extracted release directory: {$releasePath}");
@@ -3735,7 +3740,11 @@ POWERSHELL
 
             $visiting[$id] = true;
             foreach ($apps[$id]['depends_on'] as $dependencyId) {
-                $visit((string) $dependencyId);
+                $dependencyId = (string) $dependencyId;
+                if (!isset($apps[$dependencyId])) {
+                    continue;
+                }
+                $visit($dependencyId);
             }
             unset($visiting[$id]);
             $visited[$id] = true;
