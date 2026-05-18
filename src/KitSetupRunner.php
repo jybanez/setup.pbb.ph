@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.36';
+    private const VERSION = '0.1.37';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.36';
+    private const DISPLAY_VERSION = 'v1-0.1.37';
     private ?string $progressFile = null;
 
     public function main(array $argv): int
