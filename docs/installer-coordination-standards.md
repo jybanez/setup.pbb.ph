@@ -218,7 +218,7 @@ Health/integration surface:
 Kit Setup owns:
 
 - Host-level preflight checks across all selected apps.
-- Shared answers such as install root, PHP binary, database host, base domains, service naming, and node identity.
+- Shared answers such as install root, PHP binary, MySQL/MariaDB client binary, database host, base domains, service naming, and node identity.
 - Install ordering and dependency wiring.
 - Calling each app installer in interactive or unattended mode.
 - Collecting app installer status, manifests, logs, and health results.
@@ -229,13 +229,75 @@ Each app installer owns:
 
 - Its own release extraction and file layout.
 - Its own `.env` keys and validation.
-- Its own migrations and seed/bootstrap records.
+- Its own current-schema baseline, bounded upgrade migrations, and seed/bootstrap records.
 - Its own admin/bootstrap users.
 - Its own app-specific service artifacts.
 - Its own repair and rollback guidance.
 - Its own healthcheck semantics.
 
 Kit Setup must not copy app internals directly unless an app explicitly exposes that as part of its installer contract.
+
+Host binary boundary:
+
+- Kit Setup discovers and validates shared machine binaries once.
+- App installers running under Kit must use the PHP runtime already executing the installer and any Kit-provided `platform.*_binary` config values.
+- App installers must not silently search local WAMP/XAMPP/Program Files paths to choose different shared binaries in Kit mode.
+- Missing or invalid required binaries are app preflight/install failures with clear remediation text.
+
+Filesystem boundary:
+
+- Kit Setup owns the selected install root and generated per-app install path.
+- Apps may create required runtime directories under their provided install path.
+- Laravel app installers must create the standard runtime directory tree under the provided install path before running cache commands: `storage/framework/cache`, `storage/framework/sessions`, `storage/framework/views`, `storage/logs`, and `bootstrap/cache`.
+- Laravel installers must not run `config:cache`, `route:cache`, or `view:cache` until those paths exist. In particular, `view:cache` depends on `config('view.compiled')` resolving to a real path under `storage/framework/views`.
+- Apps must not create app-owned cache, log, upload, generated-data, or runtime folders outside their provided install path unless Kit explicitly provides an external path for that purpose.
+- App reports/manifests should list the filesystem paths they created or rely on, so Kit and operators can audit boundary violations.
+
+Web-server boundary:
+
+- Kit Setup owns final Apache/Nginx include generation, guarded apply, backup, and config test.
+- Apps must not write global Apache/Nginx config directly while running under Kit.
+- Apps own the declaration of their app-specific web-server requirements, such as websocket proxy routes, HTTP proxy routes, rewrites, required modules, headers, and app-scoped environment variables.
+- App release metadata and installer reports/manifests should expose these requirements as structured data under a web-server section.
+- Kit Setup validates and renders those declarations into the generated vhost include together with the selected install paths, domains, and SSL plan.
+- Raw host config fragments are review-required and should not be silently applied.
+
+Runtime service boundary:
+
+- Apps that require long-running background processes must declare them with the exact top-level key `runtime_services` in `release.json`.
+- Apps must repeat the resolved `runtime_services` array in `install-report.json` and `install-manifest.json`.
+- Apps with no runtime services should publish `"runtime_services": []` or omit the field.
+- Do not use inferred alternatives such as `services`, `daemons`, `workers`, or free-form command strings for this contract.
+- Kit Setup owns service planning, guarded start/register, persistence, health verification, and ordering before `smoke-check`.
+- App installers must not silently start unmanaged long-running processes during Kit-mode install.
+
+Canonical runtime service object:
+
+```json
+{
+  "id": "pbb-realtime-websocket",
+  "name": "PBB Realtime WebSocket",
+  "type": "background_process",
+  "required": true,
+  "required_for_smoke": true,
+  "manager": "kit",
+  "working_directory": "{app.install_path}",
+  "command": "{runtime.php_binary}",
+  "args": ["artisan", "realtime:serve"],
+  "env": {"REALTIME_EMBEDDED_MEDIA_CHUNK_DISPATCH_ENABLED": "false"},
+  "health_check": {
+    "type": "tcp",
+    "host": "127.0.0.1",
+    "port": 8080,
+    "timeout_seconds": 3
+  },
+  "logs": {
+    "stdout": "storage/logs/pbb-realtime-websocket.out.log",
+    "stderr": "storage/logs/pbb-realtime-websocket.err.log"
+  },
+  "notes": "Kit starts and verifies this before public websocket smoke checks."
+}
+```
 
 ## Required App Installer Contract
 
@@ -393,6 +455,28 @@ Recommended baseline order:
 
 Some deployments may install Realtime before Relay. Kit Setup should allow dependency-aware reordering, but it must surface missing dependencies before product app install.
 
+## Laravel Fresh Database Setup
+
+Laravel app installers should not use a fresh node install as an opportunity to replay every migration written since project development began. That path is slower, harder to recover after partial failure, and can preserve stale intermediate structures that no longer represent the release.
+
+For fresh installs, each Laravel app should include an app-owned current-schema baseline in the release bundle and declare it in `release.json` under `installer.database`. The baseline artifact should be generated by the app's package/build process from the current release schema, included in `checksums.sha256`, and applied by the app installer after `.env` is written, the database is reachable, and the target database has been verified empty.
+
+Fresh database reset rule:
+
+- A fresh install must not import baseline tables into a database that already contains app tables.
+- Kit Setup owns fresh app database creation, verification, and any destructive clear/recreate step before app installers run. If the operator chooses a fresh install against an existing database, Kit Setup must either clear/recreate that app database before handing control to the app installer or block with explicit remediation.
+- Clearing an existing database is destructive and must be opt-in through a guarded confirmation/config value. It must be recorded in Kit reports with the database name, app id, and reset mode, without printing credentials.
+- App installers should still verify emptiness before baseline import and fail clearly if a non-empty database reaches them unexpectedly, but they should not be responsible for choosing or performing Kit-level database clearing.
+- If a fresh install partially succeeded and no manifest was written, recovery policy is app-owned: either support a validated resume/repair path or require Kit/operator to reset the database and rerun fresh.
+
+Recommended strategy split:
+
+- `fresh`: apply the generated release baseline schema, then run required bootstrap/admin/data steps.
+- `upgrade`: run bounded release-to-release migrations based on the installed manifest version.
+- `repair`: validate or reconcile the current schema without replaying the full migration history.
+
+Kit Setup creates, verifies, or explicitly resets the app database and passes credentials, but tables, indexes, baseline schema generation, baseline import validation, and schema repair remain app-owned.
+
 ## Shared Host Preflight
 
 Kit Setup should validate these once before app installers run:
@@ -467,6 +551,7 @@ Known cross-app secrets/settings:
 - Hotline to Realtime backend ingress secret.
 - Hotline Realtime project/client settings.
 - Hotline Relay client credentials for SITREP.
+- MapServer shared provider credentials: `STADIAMAPS_API_KEY` and `MAPTILER_API_KEY` are shared settings passed through unchanged to local MapServer installs when present. They are not part of the main Admin Inputs workflow, and Kit Setup must not generate random provider keys.
 
 ## Health And Final Smoke Checks
 

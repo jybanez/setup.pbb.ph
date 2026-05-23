@@ -68,6 +68,8 @@ pbb-{app}-m{milestone}-{version}.zip
 
 For plain PHP apps like MapServer, `app/` can simply contain `index.php`, `config.php`, `.htaccess`, assets, and storage placeholders.
 
+Laravel-style app packages must include `public/.htaccess`. Kit Setup uses Apache vhosts with `AllowOverride All`; omitting this file breaks Laravel route fallback in newly installed apps.
+
 For Laravel apps, app bundles should prefer including `vendor/` and production frontend assets for offline-friendly hub installation. If dependencies are intentionally not bundled, `release.json` must declare the required install-time build commands.
 
 ## `release.json`
@@ -108,6 +110,16 @@ Every bundle must include `release.json` at the archive root.
     "unattended": "installer/install-run.php",
     "status": "installer/status.php",
     "schema": "installer/schema/install.schema.json",
+    "database": {
+      "fresh_install_strategy": "baseline_schema",
+      "baseline_schema": {
+        "path": "database/schema/mysql-schema.sql",
+        "engine": "mysql",
+        "generated_at": "2026-05-17T10:30:00+08:00",
+        "source": "current-release-schema"
+      },
+      "upgrade_strategy": "versioned_migrations"
+    },
     "tools": {
       "populate_initial_data": {
         "path": "tools/populate-initial-data.php",
@@ -121,14 +133,29 @@ Every bundle must include `release.json` at the archive root.
     "ready": "/api/ready",
     "status": "/api/status"
   },
-  "services": [
+  "runtime_services": [
     {
       "id": "pbb-realtime-websocket",
       "name": "PBB Realtime WebSocket",
-      "kind": "daemon",
-      "command": "php artisan realtime:serve",
+      "type": "background_process",
       "required": true,
-      "healthcheck": "/api/metrics"
+      "required_for_smoke": true,
+      "manager": "kit",
+      "working_directory": "{app.install_path}",
+      "command": "{runtime.php_binary}",
+      "args": ["artisan", "realtime:serve"],
+      "env": {"REALTIME_EMBEDDED_MEDIA_CHUNK_DISPATCH_ENABLED": "false"},
+      "health_check": {
+        "type": "tcp",
+        "host": "127.0.0.1",
+        "port": 8080,
+        "timeout_seconds": 3
+      },
+      "logs": {
+        "stdout": "storage/logs/pbb-realtime-websocket.out.log",
+        "stderr": "storage/logs/pbb-realtime-websocket.err.log"
+      },
+      "notes": "Kit starts and verifies this before public websocket smoke checks."
     }
   ],
   "artifacts": {
@@ -150,6 +177,67 @@ Versioning rules:
 - `build.git_commit` should be the source commit used to produce the package when the project is in git.
 - Package builders must generate these fields from project/build metadata, not hand-edit a stale `release.json` after the fact.
 - Distributable bundles should not include installer package build scripts, CI scaffolding, or package-builder commands unless explicitly approved for a support workflow.
+
+Database installer metadata rules:
+
+- Laravel app releases should declare `installer.database.fresh_install_strategy`.
+- The expected fresh-install strategy is `baseline_schema`.
+- `installer.database.baseline_schema.path` should point to a schema artifact inside the release bundle.
+- The baseline schema artifact must be generated from the current release database schema at package/build time, not hand-maintained in Kit Setup.
+- The baseline schema artifact must be covered by `checksums.sha256`.
+- `upgrade_strategy` should describe how an already-installed release moves forward, for example `versioned_migrations`.
+- Fresh baseline import requires an empty target database. App installers must verify that the target app database has no existing app tables before importing baseline SQL and fail clearly if it is not empty.
+- Destructive database clearing belongs to Kit Setup/operator orchestration before app handoff, not hidden app behavior. If an app supports a reset option for standalone use, it must require an explicit opt-in flag and report the reset before importing tables.
+- Partial fresh-install recovery is app-owned. If baseline tables already exist but the install manifest is missing, the app must either validate and resume safely or fail with remediation that tells Kit/operator to reset the database before rerunning fresh.
+
+Laravel runtime directory rules:
+
+- The app installer owns creation of standard Laravel runtime directories under `app.install_path`.
+- Before running `config:cache`, `route:cache`, or `view:cache`, ensure `storage/framework/cache`, `storage/framework/sessions`, `storage/framework/views`, `storage/logs`, and `bootstrap/cache` exist and are writable.
+- Do not rely on empty directories surviving ZIP packaging. Create them during install or include tracked placeholders where appropriate.
+
+Runtime service metadata rules:
+
+- Apps must declare long-running background requirements under the exact top-level key `runtime_services` in `release.json`.
+- Apps with no runtime service requirements must publish `"runtime_services": []` or omit the field.
+- Apps must repeat the resolved `runtime_services` array in both `install-report.json` and `install-manifest.json`.
+- Kit Setup owns planning, guarded start/register, persistence, health verification, and ordering before smoke checks.
+- App installers must not silently start unmanaged long-running processes during Kit-mode install.
+- Do not use inferred alternatives such as `services`, `daemons`, `workers`, or free-form command strings for the canonical service contract.
+
+Canonical object shape:
+
+```json
+{
+  "runtime_services": [
+    {
+      "id": "pbb-realtime-websocket",
+      "name": "PBB Realtime WebSocket",
+      "type": "background_process",
+      "required": true,
+      "required_for_smoke": true,
+      "manager": "kit",
+      "working_directory": "{app.install_path}",
+      "command": "{runtime.php_binary}",
+      "args": ["artisan", "realtime:serve"],
+      "env": {"REALTIME_EMBEDDED_MEDIA_CHUNK_DISPATCH_ENABLED": "false"},
+      "health_check": {
+        "type": "tcp",
+        "host": "127.0.0.1",
+        "port": 8080,
+        "timeout_seconds": 3
+      },
+      "logs": {
+        "stdout": "storage/logs/pbb-realtime-websocket.out.log",
+        "stderr": "storage/logs/pbb-realtime-websocket.err.log"
+      },
+      "notes": "Kit starts and verifies this before public websocket smoke checks."
+    }
+  ]
+}
+```
+- `VIEW_COMPILED_PATH` should be omitted or set to an absolute path under `app.install_path\\storage\\framework\\views`; never set it to an empty value.
+- A fresh-install regression should assert `php artisan view:cache` succeeds and `config('view.compiled')` is non-empty and inside `app.install_path`.
 
 ## Unattended Config
 
@@ -179,6 +267,14 @@ Kit Setup will pass each app installer a JSON file. Each app may add app-specifi
     "database": "pbb_realtime",
     "username": "pbb_realtime",
     "password": "replace-with-real-password"
+  },
+  "platform": {
+    "os": "windows",
+    "web_server": "apache",
+    "stack": "wamp",
+    "mysql_binary": "C:\\wamp64\\bin\\mariadb\\mariadb11.2.2\\bin\\mysql.exe",
+    "ffmpeg_binary": "C:\\Program Files\\Jellyfin\\Server\\ffmpeg.exe",
+    "ffprobe_binary": "C:\\Program Files\\Jellyfin\\Server\\ffprobe.exe"
   },
   "admin": {
     "strategy": "create_if_missing",
@@ -215,7 +311,8 @@ Kit Setup will pass each app installer a JSON file. Each app may add app-specifi
     "values": {}
   },
   "options": {
-    "run_migrations": true,
+    "database_setup": "baseline_schema",
+    "run_migrations": false,
     "write_env": true,
     "cache_config": true,
     "validate_after_install": true
@@ -230,6 +327,72 @@ Rules:
 - Installers must not print raw secrets in normal output or reports.
 - App-specific config belongs under an app-named section, for example `"realtime"`, `"relay"`, `"hotline"`, or `"mapserver"`.
 - Optional first-run population config belongs under the app section as `"populate"` or a narrower app-owned key, for example `"mapserver.populate"`.
+- For Laravel fresh installs, `options.database_setup` should default to `baseline_schema`. `run_migrations` is retained only as a compatibility flag for older app installers and should not be the fresh-install default.
+- Fresh install configs should assume the app database will be empty by the time the app installer imports baseline schema. Kit Setup owns the guarded reset/clear mode before app installers run; app installers should not silently drop existing tables by default.
+
+## Ownership Boundaries
+
+Kit Setup owns host binary discovery and selection. In Kit-driven unattended mode, app installers must not scan WAMP, XAMPP, Program Files, or other machine locations to pick their own shared host binaries.
+
+Rules:
+
+- PHP subprocesses must use the current PHP runtime, normally `PHP_BINARY`, because Kit launched the app installer with `runtime.php_binary`.
+- MySQL/MariaDB client work must require `platform.mysql_binary` from the generated config or `PBB_MYSQL_BINARY` from the process environment.
+- If a required Kit-provided binary is absent, not a file, or not executable, fail preflight/install clearly instead of falling back to local autodetection.
+- Apps that do not use an external MySQL client, for example PDO-based schema import, do not need to require `platform.mysql_binary`.
+
+Kit Setup also owns the selected install root and generated app install paths. App installers may create directories they require inside their provided `app.install_path`. They must not create app-owned runtime, cache, log, upload, or generated-data directories outside `app.install_path` unless Kit explicitly provides that external path in config for a named purpose.
+
+Path rules:
+
+- Treat packaged absolute paths as defaults for local development only; under Kit, generated config values win.
+- Reject or report any required runtime path that resolves outside `app.install_path` unless the config explicitly marks it as Kit-provided external storage.
+- Include all created or used filesystem paths in the app report/manifest, without secrets.
+- MapServer-style cache and log folders are app-owned runtime paths and should normally live under the provided MapServer `app.install_path`.
+
+Kit Setup also owns the final web-server configuration write, backup, apply guard, and config test. App installers must not edit global Apache/Nginx files directly when running under Kit.
+
+Web-server/vhost rules:
+
+- Apps declare app-specific web-server requirements as data in release metadata and repeat the resolved requirements in installer reports/manifests.
+- Kit Setup renders the final Apache/Nginx include from the selected local apps, app domains, certificate plan, and app-declared requirements.
+- App declarations may request bounded route proxies, websocket proxies, rewrites, headers, environment variables, required modules, or similar app-scoped vhost needs.
+- Declarations must be scoped to the app's own server name, document root, or route prefix, and must not contain secrets.
+- Raw global config fragments are not allowed by default. If an app cannot express a requirement declaratively, the report must mark it review-required instead of silently writing host config.
+- Apps with no special vhost needs may omit the block or declare an empty requirement list.
+
+Example Realtime websocket requirement:
+
+```json
+{
+  "web_server": {
+    "requirements": [
+      {
+        "id": "realtime.websocket_proxy",
+        "kind": "websocket_proxy",
+        "server_path": "/realtime",
+        "upstream": "ws://127.0.0.1:8080/realtime",
+        "preserve_host": true,
+        "required_modules": ["proxy", "proxy_wstunnel"],
+        "directives": {
+          "ProxyWebsocketFallbackToProxyHttp": "Off"
+        },
+        "smoke_test": {
+          "auth_required": false,
+          "path": "/realtime",
+          "query": {},
+          "headers": {
+            "Host": "{app.host}",
+            "Origin": "{app.url}"
+          },
+          "expect_status": 101,
+          "expect_first_message_type": "session.awaiting-auth"
+        }
+      }
+    ]
+  }
+}
+```
 
 ## First Admin Contract
 
@@ -402,7 +565,10 @@ Recommended app installer sequence:
 6. Write `.env` or app config.
 7. Generate app keys/secrets owned by the app.
 8. Install dependencies only if not bundled.
-9. Run migrations or schema setup.
+9. Create or verify the app database schema.
+   - Fresh install: load the release's generated baseline schema.
+   - Upgrade: run bounded release-to-release migrations from the installed manifest version to the target release.
+   - Repair: validate/reconcile the current schema without replaying the full development migration history.
 10. Seed/bootstrap the Kit-provided first admin and required app records.
 11. Generate service artifacts.
 12. Optionally register services if permitted.
@@ -437,12 +603,29 @@ The install manifest is a durable local record for future upgrade/repair orchest
     "database": "pbb_realtime",
     "username": "pbb_realtime"
   },
-  "services": [
+  "runtime_services": [
     {
       "id": "pbb-realtime-websocket",
-      "manager": "windows-service",
-      "registered": false,
-      "artifact": "storage/app/installer/generated/pbb-realtime-websocket.ps1"
+      "name": "PBB Realtime WebSocket",
+      "type": "background_process",
+      "required": true,
+      "required_for_smoke": true,
+      "manager": "kit",
+      "working_directory": "C:\\pbb\\apps\\realtime",
+      "command": "C:\\wamp64\\bin\\php\\php8.2.29\\php.exe",
+      "args": ["artisan", "realtime:serve"],
+      "env": {"REALTIME_EMBEDDED_MEDIA_CHUNK_DISPATCH_ENABLED": "false"},
+      "health_check": {
+        "type": "tcp",
+        "host": "127.0.0.1",
+        "port": 8080,
+        "timeout_seconds": 3
+      },
+      "logs": {
+        "stdout": "storage/logs/pbb-realtime-websocket.out.log",
+        "stderr": "storage/logs/pbb-realtime-websocket.err.log"
+      },
+      "notes": "Kit starts and verifies this before public websocket smoke checks."
     }
   ],
   "health": {
@@ -476,20 +659,39 @@ The install report is run-specific and should be safe to show to operators.
       "message": "All required checks passed."
     },
     {
-      "id": "migrate",
+      "id": "database_schema",
       "status": "success",
-      "message": "Database migrations completed."
+      "message": "Database schema prepared from release baseline."
     }
   ],
   "urls": {
     "app": "https://realtime.hub-a.pbb.ph",
     "health": "https://realtime.hub-a.pbb.ph/api/health"
   },
-  "services": [
+  "runtime_services": [
     {
       "id": "pbb-realtime-websocket",
-      "status": "artifact-generated",
-      "message": "Service artifact generated; registration requires host approval."
+      "name": "PBB Realtime WebSocket",
+      "type": "background_process",
+      "required": true,
+      "required_for_smoke": true,
+      "manager": "kit",
+      "working_directory": "C:\\pbb\\apps\\realtime",
+      "command": "C:\\wamp64\\bin\\php\\php8.2.29\\php.exe",
+      "args": ["artisan", "realtime:serve"],
+      "env": {"REALTIME_EMBEDDED_MEDIA_CHUNK_DISPATCH_ENABLED": "false"},
+      "health_check": {
+        "type": "tcp",
+        "host": "127.0.0.1",
+        "port": 8080,
+        "timeout_seconds": 3
+      },
+      "logs": {
+        "stdout": "storage/logs/pbb-realtime-websocket.out.log",
+        "stderr": "storage/logs/pbb-realtime-websocket.err.log"
+      },
+      "status": "declared",
+      "message": "Runtime service requirement declared for Kit orchestration."
     }
   ],
   "warnings": [],
@@ -505,6 +707,25 @@ Step statuses:
 - `warning`
 - `failed`
 - `skipped`
+
+Database setup reporting:
+
+- Fresh installs should report a step such as `database_schema` with a message that names the baseline strategy and artifact.
+- Reports should include non-secret database setup metadata, for example:
+
+```json
+{
+  "database_setup": {
+    "strategy": "baseline_schema",
+    "artifact": "database/schema/mysql-schema.sql",
+    "artifact_sha256": "schema-file-sha256",
+    "upgrade_strategy": "versioned_migrations"
+  }
+}
+```
+
+- Upgrade reports should name the installed source version and target version.
+- Installers must not report raw database passwords.
 
 ## Status Output
 
@@ -578,7 +799,7 @@ Apps may expose app-owned tools that prepare data after the installer has prepar
 
 Use this pattern when data loading is useful but should remain explicit, repeatable, and app-specific. Do not hide large data population inside `fresh` install unless the data is required for the app to boot.
 
-Kit Setup treats population as a separate post-install data preparation workflow, not as a required installer stage. A failed population run should not imply that core installation failed.
+Kit Setup treats population as a separate post-install data preparation workflow, not as a required installer stage. A failed population run should not imply that core installation failed. The operator-facing product/workflow is `Project Bantay Bayan Data Prep`; app tools should continue to receive an app-owned execution mode such as `initial`, `repair`, `refresh`, or `demo`.
 
 Recommended tool layout:
 
@@ -633,7 +854,7 @@ Required flags:
 Recommended flags:
 
 - `--dry-run`: validate sources and plan without writing.
-- `--mode initial|repair|refresh|demo`: app-owned population mode.
+- `--mode initial|repair|refresh|demo`: app-owned population execution mode. Do not use `data-prep` as the tool mode; Data Prep is the standalone workflow that invokes these modes.
 - `--verbose`: include detailed progress.
 
 Population tools must be:
@@ -666,7 +887,7 @@ Recommended config shape:
       "sources": {
         "incident_types": "C:\\pbb\\kit-data\\hotline\\incident-types.json",
         "teams": "C:\\pbb\\kit-data\\hotline\\teams.json",
-        "operators": "C:\\pbb\\kit-data\\hotline\\operators.json"
+        "team_resource_inventories": "C:\\pbb\\kit-data\\hotline\\team-resource-inventories.json"
       },
       "options": {
         "overwrite_existing": false,
@@ -718,7 +939,7 @@ Suggested first-run population ownership:
 - Maestro: known app/process profiles, health checks, scheduler definitions.
 - Realtime: project scopes, room policies, event/query/media settings, backend secrets.
 - MapServer: tile cache population for barangays, bounding boxes, or center/radius areas.
-- Hotline: incident types, response teams, roles, operators, dispatch defaults, SITREP routing.
+- Hotline: incident categories, incident types, incident type fields, resource categories, resources needed, default incident resources, team categories, teams, and team resource inventories. Operator accounts, dispatch defaults, and demo data are out of the initial Data Prep scope unless a later workflow explicitly enables them.
 
 Kit Setup should run population tools only when explicitly enabled in the kit config and launched from the data preparation workflow. The default installer path should be install first, health check second, final cross-app smoke last.
 

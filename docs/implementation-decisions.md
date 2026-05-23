@@ -42,6 +42,10 @@ Reports must redact token and password material. Generated runtime config and ra
 
 Technitium is the target local DNS provider for current PBB node kits.
 
+## Windows Firewall
+
+Kit Setup owns host-level Windows Firewall inbound rules needed for local app access. The guarded `firewall-apply` action replaces same-named Project Bantay Bayan HTTP/HTTPS rules and opens TCP 80 and 443 when `platform.firewall.update_mode=apply`. App installers should not create global firewall rules directly under Kit orchestration.
+
 Known local test credential:
 
 - Username: `admin`
@@ -82,6 +86,8 @@ IncludeOptional "C:/wamp64/apache-vhosts/pbb-vhosts.conf"
 ```
 
 Kit Setup can safely update the generated include file when `ssl.web_server_update_mode=apply`. It should back up any existing include file first, then test Apache config before offering restart/reload.
+
+Apps must not write this include or any other global Apache/Nginx file directly when running under Kit. Apps should declare app-scoped web-server requirements as structured release/install metadata, and Kit Setup should merge those requirements into the generated include. Realtime websocket routing is the first concrete case: the app owns the need for a `/realtime` websocket proxy and required proxy modules, while Kit owns rendering, applying, backing up, and testing the host config.
 
 Linux should use the same pattern with a distro-appropriate target path, for example:
 
@@ -129,12 +135,28 @@ Only after the reports look correct should the machine test enable apply modes.
 
 Optional data population is not part of the required installer flow.
 
-The installer should make the node kit operational: packages placed, app configs written, migrations run, first admin created, DNS/SSL/web-server configuration prepared, services generated or registered, and health/smoke checks completed.
+The installer should make the node kit operational: packages placed, app configs written, fresh app databases verified empty or explicitly reset before each release's current-schema baseline is imported, first admin created, DNS/SSL/web-server configuration prepared, services generated or registered, and health/smoke checks completed.
 
-Data preparation is a separate post-install workflow. It can still reuse the app-owned population contracts already implemented by MapServer, Maestro, Realtime, and Hotline, but it should be presented as a separate tool/mode such as:
+Runtime service declarations are now a formal app-to-Kit contract. Apps that require long-running processes must declare them with the exact `runtime_services` array in `release.json` and repeat the resolved array in install reports/manifests. Kit Setup owns service planning, start/register strategy, health verification, and ordering before smoke checks. The first concrete case is Realtime's websocket daemon: smoke should not infer the daemon command from a failed public `wss://` check; it should verify the declared service health check first.
+
+Fresh database clearing is destructive. Kit Setup owns the operator-confirmed reset step before app installers run, because Kit also owns app database creation/provisioning. It must never silently drop tables simply because an app reports `not_installed`. App installers remain responsible for refusing unsafe baseline imports into non-empty databases and for defining any safe partial-install resume policy.
+
+Data preparation is a separate post-install workflow. It can still reuse the app-owned population contracts already implemented by MapServer, Maestro, Realtime, and Hotline, but it should be presented as a separate app/workflow such as:
 
 ```text
 Project Bantay Bayan Data Prep
 ```
 
-This keeps the core install path simpler and safer. Data preparation may be repeated later to refresh tiles, boundaries, reference records, routing data, teams, operators, policies, or local cache. A failed data preparation run should not imply that the node installation itself failed.
+This keeps the core install path simpler and safer. Data preparation may be repeated later to refresh tiles, boundaries, reference records, routing data, teams, policies, or local cache. A failed data preparation run should not imply that the node installation itself failed.
+
+`Data Prep` is the product/workflow name. Individual app population tools should receive app-owned execution modes such as `initial`, `repair`, `refresh`, or `demo`; `data-prep` is not a required CLI mode for app tools.
+
+## Installer Ownership Boundaries
+
+Kit Setup owns host-level binary discovery and selected install paths. App installers running under Kit must use the current PHP runtime and Kit-provided platform binaries instead of scanning the local machine for alternate WAMP/XAMPP/tool paths.
+
+Apps own their required runtime folders, but those folders should be created under the app install path Kit provides. Any external app-owned cache, log, upload, or generated-data path must be explicitly provided by Kit config for a named purpose and reported back in the app manifest/report.
+
+This boundary is intentionally strict: if Kit does not provide a binary or path an app requires, the app should fail clearly during preflight/install instead of guessing. That keeps every app using the same validated machine context.
+
+Laravel app installers also own creation of standard in-root runtime directories before cache warmup. Fresh installs must ensure `storage/framework/cache`, `storage/framework/sessions`, `storage/framework/views`, `storage/logs`, and `bootstrap/cache` exist before `config:cache`, `route:cache`, or `view:cache`. This prevents Laravel from caching a false `view.compiled` value and failing `view:cache` with `View path not found`.

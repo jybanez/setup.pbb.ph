@@ -3,3 +3,5 @@ node_modules/
 dist/
 out/
 packages/bundled/*.zip
+packages/bundled/*.zip.backup-*
+packages/archive/**/*.zip

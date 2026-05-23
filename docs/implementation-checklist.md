@@ -18,12 +18,12 @@ This checklist tracks implementation against the 12-step non-technical installer
 | 4 | Choose Base Path | [~] | Desktop config builder derives local app install/public paths from one base path | Add folder creation preview |
 | 5 | Admin & Database | [~] | Desktop collects shared DB host/port/username/password, shared first-admin contract, `password_env` resolution, DB `password_env` resolution, and config injection | Add password strength validation in visual setup |
 | 6 | Prepare Trusted App Packages | [x] | `prepare-packages` action, trusted package manifest, checksum validation, OpenSSL detached signature verification, ZIP staging, target backup, disposable archive deployment, and package worker heartbeat progress | Wire production app release archives into the manifest |
-| 7 | Preflight Apps | [~] | `preflight` action runs selected app installers without mutation and surfaces per-app retry reports | Improve failed app report summaries in the main UI |
-| 8 | Install Apps | [~] | `install` action runs selected app installers after packages and preflight, with guarded confirmation and per-app retry | Test all apps on a clean node machine |
-| 9 | Network & Local DNS | [~] | `dns-plan`, guarded `dns-apply`, `dns-client-apply`, and `dns-verify` actions for Technitium records and resolver/client checks | Test live Technitium apply on a node machine |
-| 10 | SSL & Web Server | [~] | `ssl-plan` and guarded `ssl-apply` validate cert/key match, SAN coverage, PEM extraction, Apache vhost include writes, and Apache config test after apply | Add guarded service reload/restart |
-| 11 | Remote & Smoke Checks | [~] | `remote-check` validates remote app DNS/HTTP health; `smoke-check` validates final reachable app URLs after DNS/SSL | Test against protected remote app health endpoints |
-| 12 | Finish | [~] | `finish-report` action, desktop finish summary, Apache config-test after vhost apply, and unpacked desktop packaging target | Add guarded service reload/status controls and production installer signing |
+| 7 | Preflight Apps | [x] | `preflight` action runs selected app installers without mutation and surfaces per-app retry reports; verified successful in `0.1.57` run `setup_session_1779199741699` | Improve failed app report summaries in the main UI |
+| 8 | Install Apps | [x] | `install` action runs selected app installers after packages and preflight, with guarded confirmation and per-app retry; verified all bundled apps successful in `0.1.57` | Test on a second clean node machine |
+| 9 | Network & Local DNS | [x] | `dns-plan`, guarded `dns-apply`, `dns-client-apply`, and `dns-verify` actions for Technitium records and resolver/client checks; verified live DNS success in `0.1.57` | Add existing-install discovery and overwrite/skip choices |
+| 10 | Firewall, SSL & Web Server | [x] | Guarded `firewall-apply` opens Windows inbound HTTP/HTTPS, while `ssl-plan` and guarded `ssl-apply` validate cert/key match, SAN coverage, PEM extraction, Apache vhost include writes, and Apache config test after apply; verified in `0.1.57` | Add uninstall cleanup for firewall rules and installer artifacts |
+| 11 | Remote & Smoke Checks | [x] | `remote-check` validates remote app DNS/HTTP health; `smoke-check` validates final reachable app URLs and Realtime WSS route after DNS/SSL/service start; verified successful in `0.1.57` | Test against protected remote app health endpoints |
+| 12 | Finish | [x] | `finish-report` action and desktop finish summary reached success in `0.1.57` run `setup_session_1779199741699` | Add production installer signing and post-success installer cleanup |
 
 ## Security Checklist
 
@@ -84,6 +84,9 @@ This checklist tracks implementation against the 12-step non-technical installer
 - [x] Reorder visual flow to `Admin & Database -> Packages -> Preflight -> Install -> DNS -> SSL -> Remote/Smoke -> Finish`.
 - [x] Add numbered action buttons matching the visual stage flow.
 - [x] Add hardened NSIS uninstall cleanup for stale Apps & Features entries.
+- [x] Add runtime service plan/start/verify flow for Kit-managed background processes.
+- [x] Verify Realtime public websocket smoke check through Apache with expected first message type.
+- [x] Reach successful finish stage with all five bundled apps in desktop installer `0.1.57`.
 
 ## Separate Data Preparation Tool
 

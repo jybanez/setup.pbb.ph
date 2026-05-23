@@ -11,6 +11,7 @@ It currently supports:
 - detecting baseline platform readiness, host tools, and service state
 - verifying Kit-owned package manifest entries before install
 - planning local DNS records for Technitium
+- applying guarded Windows Firewall inbound rules for local web access
 - validating SSL certificate/key material and generating Apache vhost includes
 - discovering app release directories through `release.json`
 - validating each app has an unattended installer
@@ -80,6 +81,12 @@ Verify local DNS resolution:
 & "C:\wamp64\bin\php\php8.2.29\php.exe" "C:\wamp64\www\pbb\kit-setup\bin\kit-setup.php" --config "C:\wamp64\www\pbb\kit-setup\examples\kit-config.local-all.example.json" --action dns-verify
 ```
 
+Apply Windows Firewall inbound rules when `platform.firewall.update_mode=apply`:
+
+```powershell
+& "C:\wamp64\bin\php\php8.2.29\php.exe" "C:\wamp64\www\pbb\kit-setup\bin\kit-setup.php" --config "C:\wamp64\www\pbb\kit-setup\examples\kit-config.local-all.example.json" --action firewall-apply
+```
+
 Plan SSL and Apache vhosts:
 
 ```powershell
@@ -96,6 +103,15 @@ Check remote app dependencies:
 
 ```powershell
 & "C:\wamp64\bin\php\php8.2.29\php.exe" "C:\wamp64\www\pbb\kit-setup\bin\kit-setup.php" --config "C:\wamp64\www\pbb\kit-setup\examples\kit-config.local-all.example.json" --action remote-check
+```
+
+Plan and verify app-declared runtime services:
+
+```powershell
+& "C:\wamp64\bin\php\php8.2.29\php.exe" "C:\wamp64\www\pbb\kit-setup\bin\kit-setup.php" --config "C:\wamp64\www\pbb\kit-setup\examples\kit-config.local-all.example.json" --action service-plan
+& "C:\wamp64\bin\php\php8.2.29\php.exe" "C:\wamp64\www\pbb\kit-setup\bin\kit-setup.php" --config "C:\wamp64\www\pbb\kit-setup\examples\kit-config.local-all.example.json" --action service-start
+& "C:\wamp64\bin\php\php8.2.29\php.exe" "C:\wamp64\www\pbb\kit-setup\bin\kit-setup.php" --config "C:\wamp64\www\pbb\kit-setup\examples\kit-config.local-all.example.json" --action service-stop
+& "C:\wamp64\bin\php\php8.2.29\php.exe" "C:\wamp64\www\pbb\kit-setup\bin\kit-setup.php" --config "C:\wamp64\www\pbb\kit-setup\examples\kit-config.local-all.example.json" --action service-verify
 ```
 
 Run final app URL smoke checks:
@@ -384,6 +400,10 @@ Technitium token material is not written to the report; the report only says whe
 
 The verification report is written to `dns-verify.json`. A failure means the DNS client path does not yet resolve to the machine IP, even if Technitium accepted the API write.
 
+## Firewall Apply
+
+`firewall-apply` is a guarded Windows-only action for host-level inbound access. When `platform.firewall.update_mode=apply`, it replaces same-named Windows Firewall rules and adds inbound allow rules from `platform.firewall.inbound_rules`. The default configuration opens TCP 80 and TCP 443 for Project Bantay Bayan web access. It writes `firewall-apply.json` with each delete/add command exit code and requires the desktop installer or CLI shell to be running as Administrator.
+
 ## SSL And Web Server Plan
 
 `ssl-plan` validates the configured certificate and private key without writing private key material to reports. The default file names are derived from `ssl.certificate_root`:
@@ -416,6 +436,8 @@ When `ssl.pem_upload_path` is set, Kit Setup inspects the PEM bundle and reports
 
 The report includes certificate subject, validity dates, SAN DNS names, fingerprint, key validity, cert/key match status, planned hostname coverage, generated vhost paths, and whether an Apache include apply step is supported. `ssl-apply` is guarded by `ssl.web_server_update_mode`; it skips writes unless the mode is `apply`, then copies the generated Apache include to `paths.apache_include_output` with a backup of any existing file. After a successful write, Kit Setup runs an Apache config test with the configured `platform.apache_binary` and records the result under `apply.config_test`. Web-server reload is still manual.
 
+Kit Setup owns the final host web-server write path. App installers should not edit global Apache/Nginx config directly under Kit; they should report structured web-server requirements instead. Kit can then render app-scoped needs such as Realtime websocket proxy routes into the generated include and keep one guarded apply/config-test flow.
+
 ## Remote Dependency Check
 
 `remote-check` handles split-machine deployments. Apps with `"install_scope": "remote"` are not installed locally, but Kit Setup can still verify they are reachable before installing dependent local apps.
@@ -442,7 +464,7 @@ The report writes DNS resolution results, credential configuration status, HTTP 
 
 ## Smoke Check
 
-`smoke-check` verifies the final app links before handoff. For each enabled app, Kit Setup resolves the host from `app_url` and performs an HTTP GET. Apps may override the smoke URL:
+`smoke-check` verifies the final app links before handoff. For each enabled app, Kit Setup resolves the host from `app_url` and performs an HTTP GET. Services declared with `runtime_services[].required_for_smoke=true` are verified first through their `health_check`, so failures such as a missing Realtime websocket daemon are reported as service prerequisites instead of only as public websocket `503` errors. Apps may override the smoke URL:
 
 ```json
 {
@@ -456,7 +478,49 @@ The report writes DNS resolution results, credential configuration status, HTTP 
 }
 ```
 
-The report writes `smoke-check.json` with DNS results, HTTP status, expected status codes, and a pass/warning/fail state for each enabled app.
+The report writes `smoke-check.json` with DNS results, HTTP status, expected status codes, runtime service prerequisite results, websocket route results, and a pass/warning/fail state for each enabled app.
+
+## Runtime Services
+
+Apps declare long-running background requirements with the exact top-level key `runtime_services` in `release.json`, and repeat the resolved array in their install report and manifest. Kit Setup treats `runtime_services` as the canonical machine-readable contract; legacy keys such as `services`, `daemons`, or `workers` are not part of this contract.
+
+Canonical shape:
+
+```json
+{
+  "runtime_services": [
+    {
+      "id": "pbb-realtime-websocket",
+      "name": "PBB Realtime WebSocket",
+      "type": "background_process",
+      "required": true,
+      "required_for_smoke": true,
+      "manager": "kit",
+      "working_directory": "{app.install_path}",
+      "command": "{runtime.php_binary}",
+      "args": ["artisan", "realtime:serve"],
+      "env": {"REALTIME_EMBEDDED_MEDIA_CHUNK_DISPATCH_ENABLED": "false"},
+      "health_check": {
+        "type": "tcp",
+        "host": "127.0.0.1",
+        "port": 8080,
+        "timeout_seconds": 3
+      },
+      "logs": {
+        "stdout": "storage/logs/pbb-realtime-websocket.out.log",
+        "stderr": "storage/logs/pbb-realtime-websocket.err.log"
+      },
+      "notes": "Kit starts and verifies this before public websocket smoke checks."
+    }
+  ]
+}
+```
+
+Kit Setup uses WinSW as the only Windows service wrapper. NSSM is not supported and there is no alternate wrapper fallback: if WinSW preparation, install, start, or stop fails, the action fails and the report includes the WinSW command output plus paths to the generated service files and logs.
+
+`service-plan` writes `service-plan.json` with resolved placeholders and WinSW metadata, including `service_id`, `service_dir`, `service_exe`, `service_config`, and `service_log_dir`. `service-start` copies the vendored WinSW binary into `C:\ProgramData\PBB\Services\<service-id>\`, writes `<service-id>.xml`, installs the Windows service when missing, starts it, and verifies the declared health check. `service-stop` stops installed WinSW services for selected apps before overwrite/repair and for any services started by the current run. The Windows uninstaller runs `bin\cleanup-winsw-services.ps1`, which stops/uninstalls WinSW services under `C:\ProgramData\PBB\Services` and also removes matching Kit-managed Windows service registrations with `sc.exe delete` before deleting wrapper files. `service-verify` writes `service-verify.json`, verifies the Windows service state, and supports `health_check.type=tcp` and `health_check.type=process`.
+
+Websocket smoke checks now consume optional `web_server.requirements[].smoke_test` metadata. Supported fields include `auth_required`, `path`, `query`, `headers`, `expect_status`, and `expect_first_message_type`. Kit resolves `{app.host}` and `{app.url}` placeholders, sends the declared headers, verifies the expected handshake status, and can validate the first text frame's message type for installer-safe no-JWT smoke contracts such as Realtime's `session.awaiting-auth`. Reports include phase diagnostics, target socket, request path, sanitized request headers, connection errors, HTTP handshake status, a short response preview, and first-message diagnostics when configured.
 
 ## Visual Stage Report
 
@@ -473,7 +537,7 @@ Current visual stage order:
 7. Preflight Apps
 8. Install Apps
 9. Network & Local DNS
-10. SSL & Web Server
+10. Firewall, SSL & Web Server
 11. Remote & Smoke Checks
 12. Finish
 
@@ -492,7 +556,7 @@ The stage statuses are intended for a wizard UI:
 storage/runs/{run-id}/finish-report.json
 ```
 
-It summarizes app URLs, app statuses, admin login email, key report paths, DNS/SSL/platform state, remote dependency state, checkpoints, and required or recommended follow-ups for final handoff. When prior install actions produced app manifests or service artifact declarations, the finish report includes those per app under `apps[].manifest` and `apps[].services`.
+It summarizes app URLs, app statuses, admin login email, key report paths, DNS/SSL/platform state, runtime service state, remote dependency state, checkpoints, and required or recommended follow-ups for final handoff. When prior install actions produced app manifests or runtime service declarations, the finish report includes those per app under `apps[].manifest` and `apps[].runtime_services`.
 
 ## Data Preparation Tool Contracts
 
@@ -503,6 +567,8 @@ php tools/populate-initial-data.php --mode initial --config path\to\app.config.j
 ```
 
 Kit Setup only runs a tool when its configured `config_section` has `"enabled": true`. These tools are intended for post-install data preparation, refresh, or repair workflows, not required installation.
+
+`Project Bantay Bayan Data Prep` is the standalone operator-facing workflow. The tool `--mode` value remains app-owned; use `initial` for first-run jump-start data, `repair` for reconciliation, `refresh` for repeatable updates, and `demo` only when explicitly loading sample data.
 
 Compatibility support exists for MapServer's current `populate_tiles` script, which is declared as a string path in `release.json`. Kit Setup maps `mapserver.populate` settings into that script's existing flags, including `--base-url`, `--center`, `--radius-km`, `--zooms`, `--types`, `--max-tiles`, `--dry-run`, and `--report`.
 
