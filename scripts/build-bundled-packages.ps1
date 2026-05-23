@@ -56,7 +56,6 @@ $excludedRootFiles = @(
     ".gitignore",
     ".gitmodules",
     ".phpunit.result.cache",
-    "composer.json",
     "composer.lock",
     "package.json",
     "package-lock.json",
@@ -217,6 +216,38 @@ function Test-ZipHasEntry {
     }
 }
 
+function Test-RequiredPackageEntries {
+    param(
+        [string] $ZipPath,
+        [string] $AppId
+    )
+
+    $requiredEntriesByApp = @{
+        "pbb-maestro" = @(
+            @{ entry = "public/.htaccess"; source = "public\.htaccess" }
+        )
+        "pbb-realtime" = @(
+            @{ entry = "public/.htaccess"; source = "public\.htaccess" }
+        )
+        "pbb-relay" = @(
+            @{ entry = "public/.htaccess"; source = "public\.htaccess" }
+        )
+        "pbb-hotline" = @(
+            @{ entry = "public/.htaccess"; source = "public\.htaccess" }
+        )
+    }
+
+    if (!$requiredEntriesByApp.ContainsKey($AppId)) {
+        return
+    }
+
+    foreach ($required in $requiredEntriesByApp[$AppId]) {
+        if (!(Test-ZipHasEntry -ZipPath $ZipPath -EntryName $required.entry)) {
+            throw "Package for $AppId is missing app-owned required entry: $($required.entry). Fix the app package builder and rebuild the app-owned artifact; Kit Setup will not inject missing app files."
+        }
+    }
+}
+
 function Get-Sha256Hex {
     param([string] $Path)
 
@@ -265,6 +296,7 @@ foreach ($app in $apps) {
         Write-Host "Building $zipName from $source"
         Add-DirectoryToZip -SourceRoot $source -ZipPath $zipPath -AppId $app.id -HelperRuntime $helperRuntime
     }
+    Test-RequiredPackageEntries -ZipPath $zipPath -AppId $app.id
 
     $hash = Get-Sha256Hex -Path $zipPath
     $relativeZip = (Get-RelativePath -BasePath (Split-Path $manifestFile -Parent) -TargetPath $zipPath).Replace("\", "/")

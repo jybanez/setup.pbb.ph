@@ -30,6 +30,9 @@
 
 !macro customUnInstall
   nsExec::ExecToLog 'taskkill /IM "Project Bantay Bayan.exe" /F'
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\resources\app\bin\cleanup-winsw-services.ps1"'
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="Project Bantay Bayan HTTP"'
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="Project Bantay Bayan HTTPS"'
   Delete "$SMPROGRAMS\Project Bantay Bayan\Setup.lnk"
   Delete "$SMPROGRAMS\Project Bantay Bayan\Setup DevTools.lnk"
   Delete "$SMPROGRAMS\Project Bantay Bayan\Data Prep.lnk"

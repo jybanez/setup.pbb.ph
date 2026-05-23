@@ -10,6 +10,7 @@ function buildRuntimeConfig(template, form) {
   const apachePath = cleanString(form.apachePath);
   const mysqlPath = cleanString(form.mysqlPath);
   const selectedApps = normalizeAppScopes(form.appScopes);
+  const appInstallDecisions = normalizeAppInstallDecisions(form.appInstallDecisions, selectedApps);
 
   applyKitOwnedPaths(config, repoRoot, userDataPath, basePath);
   setNestedValue(config, ['runtime', 'php_binary'], phpPath);
@@ -25,6 +26,7 @@ function buildRuntimeConfig(template, form) {
   setNestedValue(config, ['machine', 'selected_apps'], Object.entries(selectedApps)
     .filter(([, scope]) => scope === 'local')
     .map(([appId]) => appId));
+  setNestedValue(config, ['machine', 'app_install_decisions'], appInstallDecisions);
   setNestedValue(config, ['paths', 'apps_base'], basePath);
   setNestedValue(config, ['layout', 'base_path'], basePath);
 
@@ -42,17 +44,97 @@ function buildRuntimeConfig(template, form) {
   setNestedValue(config, ['ssl', 'web_server_update_mode'], form.applyWebServer === true ? 'apply' : 'plan-only');
   setNestedValue(config, ['paths', 'apache_include_output'], cleanString(form.apacheIncludeOutput) || getNestedValue(config, ['paths', 'apache_include_output']) || '');
   applySslDefaultFiles(config);
+  applyFirewallInputs(config, form);
 
-  setNestedValue(config, ['shared', 'admin', 'name'], 'PBB Administrator');
-  setNestedValue(config, ['shared', 'admin', 'email'], 'admin@pbb.local');
+  setNestedValue(config, ['shared', 'admin', 'name'], cleanString(form.adminName) || 'PBB Administrator');
+  setNestedValue(config, ['shared', 'admin', 'email'], cleanString(form.adminEmail) || 'admin@pbb.local');
   if (config.shared && config.shared.admin) {
     delete config.shared.admin.password;
   }
   setNestedValue(config, ['shared', 'admin', 'password_env'], 'PBB_FIRST_ADMIN_PASSWORD');
 
   applyDatabaseInputs(config, form);
-  applyAppScopesAndPaths(config, selectedApps, basePath);
+  applyMapProviderInputs(config);
+  applyAppScopesAndPaths(config, selectedApps, basePath, appInstallDecisions);
+  if (form.dataPrepApply === true) {
+    setNestedValue(config, ['data_prep', 'apply'], true);
+    const dataPrepStep = cleanString(form.dataPrepStep);
+    if (dataPrepStep !== '') {
+      setNestedValue(config, ['data_prep', 'step'], dataPrepStep);
+    }
+    applyDataPrepInputs(config);
+  }
+  if (form.dataPrepReadiness === true) {
+    setNestedValue(config, ['data_prep', 'readiness_check'], true);
+  }
   return config;
+}
+
+function applyDataPrepInputs(config) {
+  const sections = {
+    'pbb-mapserver': ['mapserver'],
+    'pbb-maestro': ['maestro'],
+    'pbb-realtime': ['realtime'],
+    'pbb-relay': ['relay'],
+    'pbb-hotline': ['hotline']
+  };
+
+  for (const app of Array.isArray(config.apps) ? config.apps : []) {
+    const sectionNames = sections[app.id] || [];
+    if (!app.config || typeof app.config !== 'object') {
+      app.config = {};
+    }
+    for (const sectionName of sectionNames) {
+      if (!app.config[sectionName] || typeof app.config[sectionName] !== 'object') {
+        app.config[sectionName] = {};
+      }
+      if (app.config[sectionName].populate && typeof app.config[sectionName].populate === 'object') {
+        app.config[sectionName].populate.enabled = true;
+        app.config[sectionName].populate.dry_run = false;
+        if (app.config[sectionName].populate.options && typeof app.config[sectionName].populate.options === 'object') {
+          app.config[sectionName].populate.options.dry_run = false;
+        }
+      }
+      if (!app.config[sectionName].data_prep || typeof app.config[sectionName].data_prep !== 'object') {
+        app.config[sectionName].data_prep = {};
+      }
+      for (const key of ['prepare', 'prepare_data', 'apply_settings', 'verify']) {
+        if (!app.config[sectionName].data_prep[key] || typeof app.config[sectionName].data_prep[key] !== 'object') {
+          app.config[sectionName].data_prep[key] = {};
+        }
+        app.config[sectionName].data_prep[key].enabled = true;
+        app.config[sectionName].data_prep[key].dry_run = false;
+      }
+    }
+  }
+}
+
+function applyFirewallInputs(config, form) {
+  const updateMode = form.applyFirewall === true ? 'apply' : 'plan-only';
+  setNestedValue(config, ['platform', 'firewall', 'update_mode'], updateMode);
+}
+
+function applyMapProviderInputs(config) {
+  setNestedValue(config, ['shared', 'secrets', 'values', 'stadiamaps_api_key'], 'REPLACE_WITH_STADIAMAPS_API_KEY');
+  setNestedValue(config, ['shared', 'secrets', 'values', 'maptiler_api_key'], 'REPLACE_WITH_MAPTILER_API_KEY');
+
+  if (!Array.isArray(config.apps)) {
+    return;
+  }
+
+  for (const appConfig of config.apps) {
+    if (appConfig.id !== 'pbb-mapserver') {
+      continue;
+    }
+    if (!appConfig.config || typeof appConfig.config !== 'object') {
+      appConfig.config = {};
+    }
+    if (!appConfig.config.mapserver || typeof appConfig.config.mapserver !== 'object') {
+      appConfig.config.mapserver = {};
+    }
+    appConfig.config.mapserver.stadiamaps_api_key = 'REPLACE_WITH_STADIAMAPS_API_KEY';
+    appConfig.config.mapserver.maptiler_api_key = 'REPLACE_WITH_MAPTILER_API_KEY';
+  }
 }
 
 function applyKitOwnedPaths(config, repoRoot, userDataPath, basePath) {
@@ -82,7 +164,21 @@ function normalizeAppScopes(appScopes) {
   return scopes;
 }
 
-function applyAppScopesAndPaths(config, selectedApps, basePath) {
+function normalizeAppInstallDecisions(decisions, selectedApps) {
+  const allowed = new Set(['install', 'repair', 'overwrite', 'skip']);
+  const normalized = {};
+  for (const [appId, scope] of Object.entries(selectedApps)) {
+    if (scope !== 'local') {
+      normalized[appId] = 'skip';
+      continue;
+    }
+    const decision = decisions && allowed.has(decisions[appId]) ? decisions[appId] : 'install';
+    normalized[appId] = decision;
+  }
+  return normalized;
+}
+
+function applyAppScopesAndPaths(config, selectedApps, basePath, appInstallDecisions = {}) {
   const layoutNames = getNestedValue(config, ['layout', 'apps']) || {};
   const domains = getNestedValue(config, ['domains']) || {};
   const appDomainKeys = {
@@ -102,12 +198,16 @@ function applyAppScopesAndPaths(config, selectedApps, basePath) {
     const scope = selectedApps[appId] || 'disabled';
     const folder = layoutNames[appId] || appId.replace(/^pbb-/, '');
     const installPath = basePath ? path.join(basePath, folder) : appConfig.install_path;
-    appConfig.enabled = scope !== 'disabled';
-    appConfig.install_scope = scope;
-    if (scope === 'local') {
+    const decision = appInstallDecisions[appId] || (scope === 'local' ? 'install' : 'skip');
+    const effectiveScope = decision === 'skip' ? 'disabled' : scope;
+    appConfig.enabled = effectiveScope !== 'disabled';
+    appConfig.install_scope = effectiveScope;
+    appConfig.install_decision = decision;
+    if (effectiveScope === 'local') {
       appConfig.install_path = installPath;
       appConfig.release_path = installPath;
       appConfig.public_path = appId === 'pbb-mapserver' ? installPath : path.join(installPath, 'public');
+      applyAppOwnedRuntimePaths(appConfig, appId, installPath);
     }
 
     const domainKey = appDomainKeys[appId];
@@ -115,6 +215,20 @@ function applyAppScopesAndPaths(config, selectedApps, basePath) {
       appConfig.app_url = domains[domainKey];
     }
   }
+}
+
+function applyAppOwnedRuntimePaths(appConfig, appId, installPath) {
+  if (appId !== 'pbb-mapserver') {
+    return;
+  }
+  if (!appConfig.config || typeof appConfig.config !== 'object') {
+    appConfig.config = {};
+  }
+  if (!appConfig.config.mapserver || typeof appConfig.config.mapserver !== 'object') {
+    appConfig.config.mapserver = {};
+  }
+  appConfig.config.mapserver.cache_root = path.join(installPath, 'storage', 'tiles');
+  appConfig.config.mapserver.log_file = path.join(installPath, 'storage', 'logs', 'tiles.log');
 }
 
 function applyDatabaseInputs(config, form) {

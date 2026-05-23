@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "generated_for": "Project Bantay Bayan bundled app packages",
-  "generated_at": "2026-05-18T04:54:00Z",
+  "generated_at": "2026-05-24T03:25:11.7324961+08:00",
   "packages": [
     {
       "app_id": "pbb-mapserver",
       "version": "1.0.0",
       "source_type": "zip",
       "path": "bundled/pbb-mapserver-1.0.0.zip",
-      "sha256": "f588ccd68e8a933cb9c2d77e61752833d813482262d0dd6cabd63d503c5255a2",
+      "sha256": "2b6824ccb79a4ac18a76eb58806f3a9aa656497bc647cd0cac4d7f8c259b6438",
       "trusted": true,
       "signature_status": "local-trusted"
     },
@@ -17,7 +17,7 @@
       "version": "1.0.0",
       "source_type": "zip",
       "path": "bundled/pbb-maestro-1.0.0.zip",
-      "sha256": "da81ba32b49994979aa26460e3d69fe0361b77369a3fd3302ff29000d63ff133",
+      "sha256": "2197a2c9f16794bdda8ddacb586892378e2c29fcf6534121c6bec076156ba607",
       "trusted": true,
       "signature_status": "local-trusted"
     },
@@ -26,7 +26,7 @@
       "version": "1.0.0",
       "source_type": "zip",
       "path": "bundled/pbb-realtime-1.0.0.zip",
-      "sha256": "881f7919fd49fa2112bdec28fd22fd00e347cde999ef8ebff4505c26132fd556",
+      "sha256": "c9019a9a735e9a5483d14793d589898996124206ba8e5c2c1445ad43b225ae7c",
       "trusted": true,
       "signature_status": "local-trusted"
     },
@@ -35,7 +35,7 @@
       "version": "1.1.0",
       "source_type": "zip",
       "path": "bundled/pbb-relay-1.1.0.zip",
-      "sha256": "148a3529459c945d69d9abe767caf5b4ed219b1a185b4a19f55436fe6fae0836",
+      "sha256": "483bea49f7f856230ad5fe00e7378e79306cfded29a34d9a50daddcf0dfb3951",
       "trusted": true,
       "signature_status": "local-trusted"
     },
@@ -44,7 +44,7 @@
       "version": "5.6.1",
       "source_type": "zip",
       "path": "bundled/pbb-hotline-5.6.1.zip",
-      "sha256": "fca2350942d5bd3f118553a9604b71129dc01fae2262bd578f3d6df8e130f699",
+      "sha256": "52b00448f97146ec8fac554e499d5fe4ad1f810bb206bafbfdf567cb34ba665a",
       "trusted": true,
       "signature_status": "local-trusted"
     }

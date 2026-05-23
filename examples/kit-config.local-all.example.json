@@ -54,7 +54,24 @@
         "port": 8080,
         "expect": "available"
       }
-    ]
+    ],
+    "firewall": {
+      "update_mode": "apply",
+      "inbound_rules": [
+        {
+          "name": "Project Bantay Bayan HTTP",
+          "protocol": "TCP",
+          "local_port": 80,
+          "profile": "any"
+        },
+        {
+          "name": "Project Bantay Bayan HTTPS",
+          "protocol": "TCP",
+          "local_port": 443,
+          "profile": "any"
+        }
+      ]
+    }
   },
   "machine": {
     "id": "local-dev-node",
@@ -159,6 +176,8 @@
       "policy": "kit-provided",
       "values": {
         "mapserver_purge_token": "REPLACE_WITH_MAPSERVER_PURGE_TOKEN",
+        "stadiamaps_api_key": "REPLACE_WITH_STADIAMAPS_API_KEY",
+        "maptiler_api_key": "REPLACE_WITH_MAPTILER_API_KEY",
         "maestro_telemetry_token": "REPLACE_WITH_MAESTRO_TELEMETRY_TOKEN",
         "realtime_token_secret": "REPLACE_WITH_REALTIME_TOKEN_SECRET",
         "realtime_backend_ingress_secret": "REPLACE_WITH_REALTIME_BACKEND_SECRET",
@@ -173,17 +192,19 @@
       "id": "pbb-mapserver",
       "enabled": true,
       "install_scope": "local",
-      "release_path": "C:\\wamp64\\www\\mapserver",
+      "release_path": "C:\\wamp64\\www\\pbb-node\\mapserver",
       "mode": "repair",
-      "install_path": "C:\\wamp64\\www\\mapserver",
-      "public_path": "C:\\wamp64\\www\\mapserver",
+      "install_path": "C:\\wamp64\\www\\pbb-node\\mapserver",
+      "public_path": "C:\\wamp64\\www\\pbb-node\\mapserver",
       "app_url": "http://localhost/mapserver",
       "depends_on": [],
       "config": {
         "mapserver": {
-          "cache_root": "C:\\wamp64\\www\\mapserver\\storage\\tiles",
-          "log_file": "C:\\wamp64\\www\\mapserver\\storage\\logs\\tiles.log",
+          "cache_root": "C:\\wamp64\\www\\pbb-node\\mapserver\\storage\\tiles",
+          "log_file": "C:\\wamp64\\www\\pbb-node\\mapserver\\storage\\logs\\tiles.log",
           "purge_token": "REPLACE_WITH_MAPSERVER_PURGE_TOKEN",
+          "stadiamaps_api_key": "REPLACE_WITH_STADIAMAPS_API_KEY",
+          "maptiler_api_key": "REPLACE_WITH_MAPTILER_API_KEY",
           "raster_base_url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
           "vector_base_url": "https://tiles.example.test/{z}/{x}/{y}.pbf",
           "glyphs_base_url": "https://tiles.example.test/fonts/{fontstack}/{range}.pbf",
@@ -264,6 +285,31 @@
       "public_path": "C:\\wamp64\\www\\pbb\\realtime\\public",
       "app_url": "http://localhost/pbb/realtime/public",
       "depends_on": ["pbb-maestro"],
+      "runtime_services": [
+        {
+          "id": "pbb-realtime-websocket",
+          "name": "PBB Realtime WebSocket",
+          "type": "background_process",
+          "required": true,
+          "required_for_smoke": true,
+          "manager": "kit",
+          "working_directory": "{app.install_path}",
+          "command": "{runtime.php_binary}",
+          "args": ["artisan", "realtime:serve"],
+          "env": {"REALTIME_EMBEDDED_MEDIA_CHUNK_DISPATCH_ENABLED": "false"},
+          "health_check": {
+            "type": "tcp",
+            "host": "127.0.0.1",
+            "port": 8080,
+            "timeout_seconds": 3
+          },
+          "logs": {
+            "stdout": "storage/logs/pbb-realtime-websocket.out.log",
+            "stderr": "storage/logs/pbb-realtime-websocket.err.log"
+          },
+          "notes": "Kit starts and verifies this before public websocket smoke checks."
+        }
+      ],
       "database": {
         "driver": "mysql",
         "host": "127.0.0.1",

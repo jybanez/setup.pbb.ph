@@ -1,13 +1,13 @@
 {
   "name": "pbb-kit-setup",
-  "version": "0.1.38",
+  "version": "0.1.100",
   "private": true,
   "description": "Project Bantay Bayan setup desktop installer shell",
   "main": "desktop/main.js",
   "pbb": {
     "milestone": 1,
-    "buildVersion": "0.1.38",
-    "displayVersion": "v1-0.1.38"
+    "buildVersion": "0.1.100",
+    "displayVersion": "v1-0.1.100"
   },
   "scripts": {
     "desktop": "electron .",
@@ -32,7 +32,13 @@
       "assets/branding/**/*",
       "assets/certs/**/*",
       "assets/helpers.pbb.ph/**/*",
-      "packages/**/*",
+      "assets/winsw/**/*",
+      "packages/packages.bundled.json",
+      "packages/bundled/pbb-mapserver-1.0.0.zip",
+      "packages/bundled/pbb-maestro-1.0.0.zip",
+      "packages/bundled/pbb-realtime-1.0.0.zip",
+      "packages/bundled/pbb-relay-1.1.0.zip",
+      "packages/bundled/pbb-hotline-5.6.1.zip",
       "fixtures/package-signing/**/*",
       "docs/app-installer-template.md",
       "docs/kit-setup-runner.md",

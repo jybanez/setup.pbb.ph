@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.38';
+    private const VERSION = '0.1.100';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.38';
+    private const DISPLAY_VERSION = 'v1-0.1.100';
+    private const SERVICE_WRAPPER = 'winsw';
     private ?string $progressFile = null;
 
     public function main(array $argv): int
     {
+        $action = 'plan';
+        $runDir = '';
+        $runId = '';
+        $context = null;
+
         try {
             $options = $this->parseArgs($argv);
 
@@ -25,8 +31,8 @@ final class KitSetupRunner
             }
 
             $action = (string) ($options['action'] ?? 'plan');
-            if (!in_array($action, ['detect', 'hub-resolve', 'prepare-packages', 'prepare-package-worker', 'dns-plan', 'dns-apply', 'dns-client-apply', 'dns-verify', 'ssl-plan', 'ssl-apply', 'remote-check', 'smoke-check', 'stage-report', 'finish-report', 'plan', 'preflight', 'install', 'populate'], true)) {
-                throw new InvalidArgumentException('Unsupported --action. Use detect, hub-resolve, prepare-packages, dns-plan, dns-apply, dns-client-apply, dns-verify, ssl-plan, ssl-apply, remote-check, smoke-check, stage-report, finish-report, plan, preflight, install, or populate.');
+            if (!in_array($action, ['detect', 'hub-resolve', 'prepare-packages', 'prepare-package-worker', 'dns-plan', 'dns-apply', 'dns-client-apply', 'dns-verify', 'firewall-apply', 'service-plan', 'service-start', 'service-stop', 'service-verify', 'ssl-plan', 'ssl-apply', 'remote-check', 'smoke-check', 'stage-report', 'finish-report', 'plan', 'preflight', 'install', 'populate'], true)) {
+                throw new InvalidArgumentException('Unsupported --action. Use detect, hub-resolve, prepare-packages, dns-plan, dns-apply, dns-client-apply, dns-verify, firewall-apply, service-plan, service-start, service-stop, service-verify, ssl-plan, ssl-apply, remote-check, smoke-check, stage-report, finish-report, plan, preflight, install, or populate.');
             }
 
             $config = $this->readJsonFile($configPath);
@@ -45,6 +51,10 @@ final class KitSetupRunner
                 'run_dir' => $this->absolutePath($runDir),
                 'started_at' => date(DATE_ATOM),
             ];
+            $appFilter = (string) ($options['app'] ?? '');
+            if ($appFilter !== '') {
+                $context['app_filter'] = $appFilter;
+            }
 
             if ($action === 'detect') {
                 $report = $this->runPlatformDetect($config, $context);
@@ -138,6 +148,51 @@ final class KitSetupRunner
                 return $report['status'] === 'failed' ? 1 : 0;
             }
 
+            if ($action === 'firewall-apply') {
+                $report = $this->runFirewallApply($config, $context);
+                $reportPath = $this->joinPath($runDir, 'firewall-apply.json');
+                $this->writeJsonFile($reportPath, $report);
+                $this->recordCheckpoint($runDir, $context, $report, $reportPath);
+                $this->writeLine('Firewall apply report: ' . $this->joinPath($runDir, 'firewall-apply.json'));
+                return in_array($report['status'], ['success', 'skipped'], true) ? 0 : 1;
+            }
+
+            if ($action === 'service-plan') {
+                $report = $this->runRuntimeServicePlan($config, $context);
+                $reportPath = $this->joinPath($runDir, 'service-plan.json');
+                $this->writeJsonFile($reportPath, $report);
+                $this->recordCheckpoint($runDir, $context, $report, $reportPath);
+                $this->writeLine('Runtime service plan: ' . $this->joinPath($runDir, 'service-plan.json'));
+                return $report['status'] === 'failed' ? 1 : 0;
+            }
+
+            if ($action === 'service-start') {
+                $report = $this->runRuntimeServiceStart($config, $context);
+                $reportPath = $this->joinPath($runDir, 'service-start.json');
+                $this->writeJsonFile($reportPath, $report);
+                $this->recordCheckpoint($runDir, $context, $report, $reportPath);
+                $this->writeLine('Runtime service start: ' . $this->joinPath($runDir, 'service-start.json'));
+                return $report['status'] === 'failed' ? 1 : 0;
+            }
+
+            if ($action === 'service-stop') {
+                $report = $this->runRuntimeServiceStop($config, $context);
+                $reportPath = $this->joinPath($runDir, 'service-stop.json');
+                $this->writeJsonFile($reportPath, $report);
+                $this->recordCheckpoint($runDir, $context, $report, $reportPath);
+                $this->writeLine('Runtime service stop: ' . $this->joinPath($runDir, 'service-stop.json'));
+                return $report['status'] === 'failed' ? 1 : 0;
+            }
+
+            if ($action === 'service-verify') {
+                $report = $this->runRuntimeServiceVerify($config, $context);
+                $reportPath = $this->joinPath($runDir, 'service-verify.json');
+                $this->writeJsonFile($reportPath, $report);
+                $this->recordCheckpoint($runDir, $context, $report, $reportPath);
+                $this->writeLine('Runtime service verification: ' . $this->joinPath($runDir, 'service-verify.json'));
+                return $report['status'] === 'failed' ? 1 : 0;
+            }
+
             if ($action === 'ssl-plan') {
                 $report = $this->runSslPlan($config, $runDir, $context);
                 $reportPath = $this->joinPath($runDir, 'ssl-plan.json');
@@ -166,6 +221,9 @@ final class KitSetupRunner
             }
 
             if ($action === 'smoke-check') {
+                if (($config['data_prep']['readiness_check'] ?? false) === true) {
+                    $config = $this->applyInstallStateToDataPrepConfig($config, $this->assertDataPrepAllowed());
+                }
                 $report = $this->runSmokeCheck($config, $context);
                 $reportPath = $this->joinPath($runDir, 'smoke-check.json');
                 $this->writeJsonFile($reportPath, $report);
@@ -187,15 +245,29 @@ final class KitSetupRunner
                 $report = $this->runFinishReport($config, $runDir, $context);
                 $reportPath = $this->joinPath($runDir, 'finish-report.json');
                 $this->writeJsonFile($reportPath, $report);
+                if (($report['status'] ?? '') === 'success') {
+                    $statePath = $this->installStatePath();
+                    $this->writeJsonFile($statePath, $this->buildInstallState($config, $report, $context, $reportPath));
+                    $report['install_state_path'] = $this->absolutePath($statePath);
+                    $this->writeJsonFile($reportPath, $report);
+                }
                 $this->recordCheckpoint($runDir, $context, $report, $reportPath);
                 $this->writeLine('Finish report: ' . $this->joinPath($runDir, 'finish-report.json'));
                 return $report['status'] === 'failed' ? 1 : 0;
             }
 
+            $requireInstaller = true;
+            if ($action === 'populate') {
+                $installState = $this->assertDataPrepAllowed();
+                $config = $this->applyInstallStateToDataPrepConfig($config, $installState);
+                $requireInstaller = false;
+            }
+            $config = $this->applySharedInstallDefaultsToKitConfig($config);
+
             $secretResult = $this->resolveKitSecrets($config, $runDir);
             $config = $secretResult['config'];
 
-            $apps = $this->discoverApps($config);
+            $apps = $this->discoverApps($config, $requireInstaller);
             $orderedApps = $this->orderApps($apps);
             $appFilter = (string) ($options['app'] ?? '');
             if ($appFilter !== '') {
@@ -227,52 +299,144 @@ final class KitSetupRunner
                 }
                 $kitReport['status'] = (string) ($kitReport['installation_plan']['status'] ?? 'success');
                 $kitReport['finished_at'] = date(DATE_ATOM);
-                $reportPath = $this->joinPath($runDir, 'kit-report.json');
+                $reportPath = $this->kitActionReportPath($runDir, $action);
                 $this->writeJsonFile($reportPath, $kitReport);
+                $this->writeJsonFile($this->joinPath($runDir, 'kit-report.json'), $kitReport);
                 $this->recordCheckpoint($runDir, $context, $kitReport, $reportPath);
-                $this->writeLine('Plan completed: ' . $this->joinPath($runDir, 'kit-report.json'));
+                $this->writeLine('Plan completed: ' . $reportPath);
                 return 0;
             }
 
             $failed = false;
             if (in_array($action, ['preflight', 'install'], true)) {
-                $kitReport['database_provisioning'] = $this->provisionAppDatabases($orderedApps, $config);
+                $kitReport['database_provisioning'] = $this->provisionAppDatabases($orderedApps, $config, $action);
                 if (($kitReport['database_provisioning']['status'] ?? 'success') === 'failed') {
                     $failed = true;
                     $kitReport['status'] = 'failed';
                     $kitReport['finished_at'] = date(DATE_ATOM);
-                    $reportPath = $this->joinPath($runDir, 'kit-report.json');
+                    $reportPath = $this->kitActionReportPath($runDir, $action);
                     $this->writeJsonFile($reportPath, $kitReport);
+                    $this->writeJsonFile($this->joinPath($runDir, 'kit-report.json'), $kitReport);
                     $this->recordCheckpoint($runDir, $context, $kitReport, $reportPath);
-                    $this->writeLine('Run report: ' . $this->joinPath($runDir, 'kit-report.json'));
+                    $this->writeLine('Run report: ' . $reportPath);
                     return 1;
                 }
             }
+            if ($action === 'populate' && (string) ($config['data_prep']['step'] ?? '') === 'post_apply_verify') {
+                $postApply = $this->runDataPrepPostApplyVerification($orderedApps, $config, $runDir, $runId, $context);
+                $kitReport['data_prep_post_apply'] = $postApply;
+                $finalResult = $postApply['heartbeat_verify']['final_result'] ?? null;
+                if (is_array($finalResult)) {
+                    $kitReport['apps'][] = $finalResult;
+                }
+                foreach (($postApply['warnings'] ?? []) as $warning) {
+                    $kitReport['warnings'][] = (string) $warning;
+                }
+                foreach (($postApply['errors'] ?? []) as $error) {
+                    $kitReport['errors'][] = (string) $error;
+                }
+                $kitReport['status'] = ($postApply['status'] ?? '') === 'failed' ? 'failed' : ((($postApply['status'] ?? '') === 'warning') ? 'warning' : 'success');
+                $kitReport['finished_at'] = date(DATE_ATOM);
+                $reportPath = $this->kitActionReportPath($runDir, $action);
+                $this->writeJsonFile($reportPath, $kitReport);
+                $this->writeJsonFile($this->joinPath($runDir, 'kit-report.json'), $kitReport);
+                $this->recordCheckpoint($runDir, $context, $kitReport, $reportPath);
+                $this->writeLine('Run report: ' . $reportPath);
+                return $kitReport['status'] === 'failed' ? 1 : 0;
+            }
             foreach ($orderedApps as $app) {
-                $appResult = $action === 'populate'
-                    ? $this->runAppPopulationTools($app, $config, $runDir, $runId)
-                    : $this->runAppInstaller($app, $config, $runDir, $runId, $action);
+                try {
+                    $appResult = $action === 'populate'
+                        ? $this->runAppPopulationTools($app, $config, $runDir, $runId)
+                        : $this->runAppInstaller($app, $config, $runDir, $runId, $action);
+                } catch (Throwable $e) {
+                    $appResult = [
+                        'id' => $app['id'] ?? null,
+                        'name' => $app['name'] ?? ($app['id'] ?? null),
+                        'status' => 'failed',
+                        'mode' => $action,
+                        'message' => $e->getMessage(),
+                        'errors' => [$e->getMessage()],
+                    ];
+                }
                 $kitReport['apps'][] = $appResult;
                 if (!in_array($appResult['status'], ['success', 'warning', 'skipped'], true)) {
                     $failed = true;
+                    $message = (string) ($appResult['message'] ?? '');
+                    $label = (string) ($appResult['name'] ?? $appResult['id'] ?? 'app');
+                    if ($message !== '') {
+                        $kitReport['errors'][] = $label . ': ' . $message;
+                    }
                     if ($action === 'install') {
                         break;
                     }
+                } elseif (($appResult['status'] ?? '') === 'warning') {
+                    $message = (string) ($appResult['message'] ?? '');
+                    $label = (string) ($appResult['name'] ?? $appResult['id'] ?? 'app');
+                    if ($message !== '') {
+                        $kitReport['warnings'][] = $label . ': ' . $message;
+                    }
+                }
+            }
+
+            if ($action === 'populate' && $appFilter === '' && (string) ($config['data_prep']['step'] ?? '') === '') {
+                $postApply = $this->runDataPrepPostApplyVerification($orderedApps, $config, $runDir, $runId, $context);
+                $kitReport['data_prep_post_apply'] = $postApply;
+                foreach (($postApply['warnings'] ?? []) as $warning) {
+                    $kitReport['warnings'][] = (string) $warning;
+                }
+                foreach (($postApply['errors'] ?? []) as $error) {
+                    $kitReport['errors'][] = (string) $error;
+                }
+                if (($postApply['status'] ?? '') === 'failed') {
+                    $failed = true;
                 }
             }
 
             $kitReport['status'] = $failed ? 'failed' : 'success';
             $kitReport['finished_at'] = date(DATE_ATOM);
-            $reportPath = $this->joinPath($runDir, 'kit-report.json');
+            $reportPath = $this->kitActionReportPath($runDir, $action);
             $this->writeJsonFile($reportPath, $kitReport);
+            $this->writeJsonFile($this->joinPath($runDir, 'kit-report.json'), $kitReport);
             $this->recordCheckpoint($runDir, $context, $kitReport, $reportPath);
-            $this->writeLine('Run report: ' . $this->joinPath($runDir, 'kit-report.json'));
+            $this->writeLine('Run report: ' . $reportPath);
 
             return $failed ? 1 : 0;
         } catch (Throwable $e) {
             $this->writeLine('ERROR: ' . $e->getMessage(), true);
+            if ($runDir !== '' && is_dir($runDir) && is_array($context)) {
+                $report = $this->makeFailedActionReport($context, $action, $e->getMessage());
+                $reportPath = $this->kitActionReportPath($runDir, $action);
+                try {
+                    $this->writeJsonFile($reportPath, $report);
+                    $this->writeJsonFile($this->joinPath($runDir, 'kit-report.json'), $report);
+                    $this->recordCheckpoint($runDir, $context, $report, $reportPath);
+                } catch (Throwable $writeError) {
+                    $this->writeLine('ERROR: Failed to write failure report: ' . $writeError->getMessage(), true);
+                }
+            }
             return 1;
         }
+    }
+
+    private function makeFailedActionReport(array $context, string $action, string $message): array
+    {
+        return [
+            'schema_version' => 1,
+            'kit_setup_version' => self::VERSION,
+            'run_id' => $context['run_id'] ?? null,
+            'action' => $action,
+            'status' => 'failed',
+            'started_at' => $context['started_at'] ?? null,
+            'finished_at' => date(DATE_ATOM),
+            'config_path' => $context['config_path'] ?? null,
+            'run_dir' => $context['run_dir'] ?? null,
+            'app_filter' => $context['app_filter'] ?? null,
+            'apps' => [],
+            'warnings' => [],
+            'errors' => [$message],
+            'message' => $message,
+        ];
     }
 
     private function buildInstallationPlanSummary(array $config, string $runDir, array $context): array
@@ -405,13 +569,33 @@ final class KitSetupRunner
     private function runFinishReport(array $config, string $runDir, array $context): array
     {
         $checkpoints = $this->readCheckpoints($runDir);
-        $kitReport = $this->readOptionalJson($this->joinPath($runDir, 'kit-report.json'));
-        $stageReport = $this->readOptionalJson($this->joinPath($runDir, 'stage-report.json'));
-        $dnsReport = $this->readOptionalJson($this->joinPath($runDir, 'dns-verify.json')) ?: $this->readOptionalJson($this->joinPath($runDir, 'dns-apply.json')) ?: $this->readOptionalJson($this->joinPath($runDir, 'dns-plan.json'));
-        $sslReport = $this->readOptionalJson($this->joinPath($runDir, 'ssl-apply.json')) ?: $this->readOptionalJson($this->joinPath($runDir, 'ssl-plan.json'));
-        $remoteReport = $this->readOptionalJson($this->joinPath($runDir, 'remote-check.json'));
-        $smokeReport = $this->readOptionalJson($this->joinPath($runDir, 'smoke-check.json'));
-        $platformReport = $this->readOptionalJson($this->joinPath($runDir, 'platform-report.json'));
+        $installReport = $this->readFirstCheckpointReport($checkpoints, ['install']);
+        $kitReport = $installReport
+            ?: $this->readFirstCheckpointReport($checkpoints, ['preflight', 'plan', 'populate'])
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'kit-report.json'));
+        $stageReport = $this->readFirstCheckpointReport($checkpoints, ['stage-report'])
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'stage-report.json'));
+        $packageReport = $this->readFirstCheckpointReport($checkpoints, ['prepare-packages'])
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'package-report.json'));
+        $dnsReport = $this->readFirstCheckpointReport($checkpoints, ['dns-verify', 'dns-apply', 'dns-plan'])
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'dns-verify.json'))
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'dns-apply.json'))
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'dns-plan.json'));
+        $firewallReport = $this->readFirstCheckpointReport($checkpoints, ['firewall-apply'])
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'firewall-apply.json'));
+        $serviceReport = $this->readFirstCheckpointReport($checkpoints, ['service-verify', 'service-start', 'service-plan'])
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'service-verify.json'))
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'service-start.json'))
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'service-plan.json'));
+        $sslReport = $this->readFirstCheckpointReport($checkpoints, ['ssl-apply', 'ssl-plan'])
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'ssl-apply.json'))
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'ssl-plan.json'));
+        $remoteReport = $this->readFirstCheckpointReport($checkpoints, ['remote-check'])
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'remote-check.json'));
+        $smokeReport = $this->readFirstCheckpointReport($checkpoints, ['smoke-check'])
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'smoke-check.json'));
+        $platformReport = $this->readFirstCheckpointReport($checkpoints, ['detect'])
+            ?: $this->readOptionalJson($this->joinPath($runDir, 'platform-report.json'));
 
         $apps = [];
         if (is_array($kitReport) && isset($kitReport['apps']) && is_array($kitReport['apps'])) {
@@ -427,6 +611,7 @@ final class KitSetupRunner
                     'report_path' => $app['report_path'] ?? null,
                     'manifest' => $app['manifest'] ?? null,
                     'services' => $app['services'] ?? [],
+                    'runtime_services' => $app['runtime_services'] ?? [],
                 ];
             }
         } else {
@@ -442,14 +627,20 @@ final class KitSetupRunner
                     'report_path' => null,
                     'manifest' => null,
                     'services' => [],
+                    'runtime_services' => $this->appRuntimeServices((string) ($appConfig['id'] ?? ''), $appConfig, $config),
                 ];
             }
         }
 
-        $followUps = $this->buildFinishFollowUps($checkpoints, $apps, $dnsReport, $sslReport, $remoteReport, $smokeReport, $platformReport);
+        $followUps = $this->buildFinishFollowUps($checkpoints, $apps, $dnsReport, $sslReport, $remoteReport, $smokeReport, $platformReport, $serviceReport);
         $status = count(array_filter($followUps, static fn (array $item): bool => ($item['severity'] ?? '') === 'required')) > 0
             ? 'warning'
             : 'success';
+
+        $installerCleanup = null;
+        if ($status === 'success') {
+            $installerCleanup = $this->cleanupSelectedAppInstallerArtifacts($config);
+        }
 
         return [
             'schema_version' => 1,
@@ -464,16 +655,39 @@ final class KitSetupRunner
                 'name' => $config['shared']['admin']['name'] ?? 'PBB Administrator',
                 'email' => $config['shared']['admin']['email'] ?? 'admin@pbb.local',
             ],
+            'runtime' => $this->runtimeState($config),
             'apps' => $apps,
             'reports' => [
-                'kit_report' => is_file($this->joinPath($runDir, 'kit-report.json')) ? $this->absolutePath($this->joinPath($runDir, 'kit-report.json')) : null,
-                'stage_report' => is_file($this->joinPath($runDir, 'stage-report.json')) ? $this->absolutePath($this->joinPath($runDir, 'stage-report.json')) : null,
+                'kit_report' => $this->checkpointReportPath($checkpoints, 'install') ?: (is_file($this->joinPath($runDir, 'kit-report.json')) ? $this->absolutePath($this->joinPath($runDir, 'kit-report.json')) : null),
+                'package_report' => $this->checkpointReportPath($checkpoints, 'prepare-packages') ?: (is_file($this->joinPath($runDir, 'package-report.json')) ? $this->absolutePath($this->joinPath($runDir, 'package-report.json')) : null),
+                'stage_report' => $this->checkpointReportPath($checkpoints, 'stage-report') ?: (is_file($this->joinPath($runDir, 'stage-report.json')) ? $this->absolutePath($this->joinPath($runDir, 'stage-report.json')) : null),
+                'dns_report' => $this->firstCheckpointReportPath($checkpoints, ['dns-verify', 'dns-apply', 'dns-plan']),
+                'firewall_report' => $this->checkpointReportPath($checkpoints, 'firewall-apply'),
+                'service_report' => $this->firstCheckpointReportPath($checkpoints, ['service-verify', 'service-start', 'service-plan']),
+                'ssl_report' => $this->firstCheckpointReportPath($checkpoints, ['ssl-apply', 'ssl-plan']),
+                'remote_report' => $this->checkpointReportPath($checkpoints, 'remote-check'),
+                'smoke_report' => $this->checkpointReportPath($checkpoints, 'smoke-check'),
                 'checkpoint_report' => is_file($this->joinPath($runDir, 'checkpoints.json')) ? $this->absolutePath($this->joinPath($runDir, 'checkpoints.json')) : null,
             ],
+            'packages' => is_array($packageReport) ? [
+                'status' => $packageReport['status'] ?? null,
+                'packages' => $packageReport['packages'] ?? [],
+            ] : null,
             'dns' => [
                 'status' => is_array($dnsReport) ? ($dnsReport['status'] ?? null) : null,
                 'records' => is_array($dnsReport) ? ($dnsReport['records'] ?? ($dnsReport['plan']['records'] ?? [])) : [],
                 'verification' => is_array($dnsReport) && ($dnsReport['action'] ?? '') === 'dns-verify' ? ($dnsReport['results'] ?? []) : null,
+            ],
+            'firewall' => is_array($firewallReport) ? [
+                'status' => $firewallReport['status'] ?? null,
+                'rules' => $firewallReport['rules'] ?? [],
+            ] : null,
+            'runtime_services' => is_array($serviceReport) ? [
+                'status' => $serviceReport['status'] ?? null,
+                'services' => $serviceReport['runtime_services'] ?? [],
+            ] : [
+                'status' => null,
+                'services' => $this->collectRuntimeServices($config),
             ],
             'ssl' => [
                 'status' => is_array($sslReport) ? ($sslReport['status'] ?? null) : null,
@@ -495,14 +709,70 @@ final class KitSetupRunner
             ] : null,
             'checkpoints' => $checkpoints,
             'follow_ups' => $followUps,
+            'installer_cleanup' => $installerCleanup,
             'stage_report_status' => is_array($stageReport) ? ($stageReport['status'] ?? null) : null,
         ];
     }
 
-    private function buildFinishFollowUps(array $checkpoints, array $apps, ?array $dnsReport, ?array $sslReport, ?array $remoteReport, ?array $smokeReport, ?array $platformReport): array
+    private function cleanupSelectedAppInstallerArtifacts(array $config): array
+    {
+        $results = [];
+        $warnings = [];
+        foreach (($config['apps'] ?? []) as $appConfig) {
+            if (!is_array($appConfig) || ($appConfig['enabled'] ?? true) === false) {
+                continue;
+            }
+            if ((string) ($appConfig['install_scope'] ?? 'local') !== 'local') {
+                continue;
+            }
+
+            $appId = (string) ($appConfig['id'] ?? '');
+            $releasePath = (string) ($appConfig['release_path'] ?? $appConfig['install_path'] ?? '');
+            if ($appId === '' || $releasePath === '') {
+                continue;
+            }
+
+            $release = [];
+            $releaseJsonPath = $this->joinPath($releasePath, 'release.json');
+            if (is_file($releaseJsonPath)) {
+                try {
+                    $candidate = $this->readJsonFile($releaseJsonPath);
+                    if (is_array($candidate)) {
+                        $release = $candidate;
+                    }
+                } catch (Throwable $e) {
+                    $warnings[] = 'Unable to read release metadata for installer cleanup: ' . $e->getMessage();
+                }
+            }
+
+            $result = $this->cleanupAppInstallerArtifacts([
+                'id' => $appId,
+                'release_path' => $releasePath,
+                'release' => $release,
+            ]);
+            $results[] = [
+                'app_id' => $appId,
+                'status' => $result['status'] ?? 'warning',
+                'removed' => $result['removed'] ?? [],
+                'skipped' => $result['skipped'] ?? [],
+                'warnings' => $result['warnings'] ?? [],
+            ];
+            foreach (($result['warnings'] ?? []) as $warning) {
+                $warnings[] = $appId . ': ' . $warning;
+            }
+        }
+
+        return [
+            'status' => count($warnings) > 0 ? 'warning' : 'success',
+            'apps' => $results,
+            'warnings' => $warnings,
+        ];
+    }
+
+    private function buildFinishFollowUps(array $checkpoints, array $apps, ?array $dnsReport, ?array $sslReport, ?array $remoteReport, ?array $smokeReport, ?array $platformReport, ?array $serviceReport = null): array
     {
         $items = [];
-        foreach (['detect', 'plan', 'preflight'] as $requiredAction) {
+        foreach (['plan', 'preflight'] as $requiredAction) {
             $status = $checkpoints['actions'][$requiredAction]['status'] ?? null;
             if (!in_array($status, ['success', 'warning'], true)) {
                 $items[] = [
@@ -510,6 +780,14 @@ final class KitSetupRunner
                     'message' => 'Run or fix required action: ' . $requiredAction,
                 ];
             }
+        }
+        $detectStatus = $checkpoints['actions']['detect']['status'] ?? null;
+        $stageReportStatus = $checkpoints['actions']['stage-report']['status'] ?? null;
+        if (!in_array($detectStatus, ['success', 'warning'], true) && !in_array($stageReportStatus, ['success', 'warning'], true)) {
+            $items[] = [
+                'severity' => 'required',
+                'message' => 'Run or fix required action: detect or stage-report',
+            ];
         }
         foreach ($apps as $app) {
             if (!in_array($app['status'] ?? '', ['success', 'warning', 'skipped'], true)) {
@@ -532,6 +810,19 @@ final class KitSetupRunner
         if (is_array($remoteReport) && ($remoteReport['status'] ?? '') === 'failed') {
             $items[] = ['severity' => 'required', 'message' => 'Remote dependency check failed. Review remote app endpoints.'];
         }
+        $smokeRequiredServices = [];
+        foreach ($apps as $app) {
+            foreach (($app['runtime_services'] ?? []) as $service) {
+                if (is_array($service) && ($service['required_for_smoke'] ?? false) === true) {
+                    $smokeRequiredServices[] = $service;
+                }
+            }
+        }
+        if (count($smokeRequiredServices) > 0 && !is_array($serviceReport)) {
+            $items[] = ['severity' => 'required', 'message' => 'Run service-start and service-verify before smoke-check. Runtime services are required for final handoff.'];
+        } elseif (is_array($serviceReport) && ($serviceReport['status'] ?? '') === 'failed') {
+            $items[] = ['severity' => 'required', 'message' => 'Runtime service verification failed. Start or fix required services before smoke-check.'];
+        }
         if (!is_array($smokeReport)) {
             $items[] = ['severity' => 'recommended', 'message' => 'Run smoke-check before final handoff.'];
         } elseif (($smokeReport['status'] ?? '') === 'failed') {
@@ -541,6 +832,52 @@ final class KitSetupRunner
             $items[] = ['severity' => 'required', 'message' => 'Platform check failed. Fix host prerequisites.'];
         }
         return $items;
+    }
+
+    private function readFirstCheckpointReport(array $checkpoints, array $actions): ?array
+    {
+        foreach ($actions as $action) {
+            $path = $this->checkpointReportPath($checkpoints, $action);
+            if ($path === null) {
+                continue;
+            }
+            $report = $this->readOptionalJson($path);
+            if (is_array($report)) {
+                return $report;
+            }
+        }
+        return null;
+    }
+
+    private function firstCheckpointReportPath(array $checkpoints, array $actions): ?string
+    {
+        foreach ($actions as $action) {
+            $path = $this->checkpointReportPath($checkpoints, $action);
+            if ($path !== null) {
+                return $path;
+            }
+        }
+        return null;
+    }
+
+    private function checkpointReportPath(array $checkpoints, string $action): ?string
+    {
+        $path = $checkpoints['actions'][$action]['report_path'] ?? null;
+        if (!is_string($path) || $path === '' || !is_file($path)) {
+            return null;
+        }
+        return $this->absolutePath($path);
+    }
+
+    private function kitActionReportPath(string $runDir, string $action): string
+    {
+        $filenames = [
+            'plan' => 'plan-report.json',
+            'preflight' => 'preflight-report.json',
+            'install' => 'install-report.json',
+            'populate' => 'populate-report.json',
+        ];
+        return $this->joinPath($runDir, $filenames[$action] ?? 'kit-report.json');
     }
 
     private function appUrlFromConfig(array $config, string $appId): ?string
@@ -651,13 +988,40 @@ final class KitSetupRunner
             $values = [];
         }
 
+        $existingSecretPath = $this->joinPath($runDir, 'secrets', 'kit-secrets.json');
+        $existingSecretFile = $this->readOptionalJson($existingSecretPath);
+        $existingValues = is_array($existingSecretFile['values'] ?? null) ? $existingSecretFile['values'] : [];
+
         $definitions = $this->defaultSecretDefinitions();
         $generated = [];
+        $reused = [];
         foreach ($definitions as $name => $definition) {
             $current = (string) ($values[$name] ?? '');
             if ($current === '' || $this->isPlaceholder($current)) {
-                $values[$name] = $this->generateSecret((int) $definition['bytes']);
-                $generated[] = $name;
+                $existing = (string) ($existingValues[$name] ?? '');
+                if ($existing !== '' && !$this->isPlaceholder($existing)) {
+                    $values[$name] = $existing;
+                    $reused[] = $name;
+                } else {
+                    $values[$name] = $this->generateSecret((int) $definition['bytes']);
+                    $generated[] = $name;
+                }
+            }
+        }
+
+        $optionalDefinitions = $this->optionalSecretDefinitions();
+        foreach ($optionalDefinitions as $name => $definition) {
+            $current = (string) ($values[$name] ?? '');
+            $envName = (string) ($definition['env'] ?? '');
+            $envValue = $envName !== '' ? getenv($envName) : false;
+            $existing = (string) ($existingValues[$name] ?? '');
+            if (($current === '' || $this->isPlaceholder($current)) && $existing !== '' && !$this->isPlaceholder($existing)) {
+                $values[$name] = $existing;
+                $reused[] = $name;
+            } elseif (($current === '' || $this->isPlaceholder($current)) && is_string($envValue) && trim($envValue) !== '') {
+                $values[$name] = trim($envValue);
+            } elseif ($current === '' || $this->isPlaceholder($current)) {
+                $values[$name] = '';
             }
         }
 
@@ -666,7 +1030,7 @@ final class KitSetupRunner
         $config['shared']['secrets'] = $secretConfig;
 
         $placeholderMap = [];
-        foreach ($definitions as $name => $definition) {
+        foreach (array_merge($definitions, $optionalDefinitions) as $name => $definition) {
             foreach ($definition['placeholders'] as $placeholder) {
                 $placeholderMap[$placeholder] = (string) $values[$name];
             }
@@ -686,6 +1050,7 @@ final class KitSetupRunner
             'policy' => $secretConfig['policy'] ?? 'kit-provided',
             'path' => $this->absolutePath($secretPath),
             'generated' => $generated,
+            'reused' => array_values(array_unique($reused)),
             'available' => array_keys($values),
             'redacted_values' => $this->redactSecretValues($values),
         ];
@@ -695,6 +1060,20 @@ final class KitSetupRunner
         return [
             'config' => $config,
             'report' => $report,
+        ];
+    }
+
+    private function optionalSecretDefinitions(): array
+    {
+        return [
+            'stadiamaps_api_key' => [
+                'env' => 'STADIAMAPS_API_KEY',
+                'placeholders' => ['REPLACE_WITH_STADIAMAPS_API_KEY'],
+            ],
+            'maptiler_api_key' => [
+                'env' => 'MAPTILER_API_KEY',
+                'placeholders' => ['REPLACE_WITH_MAPTILER_API_KEY'],
+            ],
         ];
     }
 
@@ -708,6 +1087,14 @@ final class KitSetupRunner
             'maestro_telemetry_token' => [
                 'bytes' => 32,
                 'placeholders' => ['REPLACE_WITH_MAESTRO_TELEMETRY_TOKEN'],
+            ],
+            'maestro_relay_telemetry_token' => [
+                'bytes' => 32,
+                'placeholders' => ['REPLACE_WITH_MAESTRO_RELAY_TELEMETRY_TOKEN'],
+            ],
+            'maestro_realtime_telemetry_token' => [
+                'bytes' => 32,
+                'placeholders' => ['REPLACE_WITH_MAESTRO_REALTIME_TELEMETRY_TOKEN'],
             ],
             'realtime_token_secret' => [
                 'bytes' => 48,
@@ -1518,6 +1905,36 @@ final class KitSetupRunner
                     }
                 }
             }
+            if (strtolower((string) ($release['type'] ?? '')) === 'laravel') {
+                $installerDatabase = $release['installer']['database'] ?? null;
+                $freshInstallStrategy = is_array($installerDatabase)
+                    ? (string) ($installerDatabase['fresh_install_strategy'] ?? '')
+                    : '';
+                $baselineSchema = is_array($installerDatabase)
+                    ? ($installerDatabase['baseline_schema'] ?? null)
+                    : null;
+                $baselinePath = is_array($baselineSchema)
+                    ? (string) ($baselineSchema['path'] ?? '')
+                    : '';
+
+                if ($freshInstallStrategy !== 'baseline_schema' || $baselinePath === '') {
+                    $warnings[] = 'Laravel release does not declare installer.database baseline_schema metadata for fresh installs.';
+                } else {
+                    $releaseRoot = null;
+                    if (is_string($stagingPath) && $stagingPath !== '') {
+                        $releaseRoot = $stagingPath;
+                    } elseif ($sourceType === 'directory' && is_dir($packagePath)) {
+                        $releaseRoot = $packagePath;
+                    }
+
+                    if (is_string($releaseRoot) && $releaseRoot !== '') {
+                        $normalizedBaselinePath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $baselinePath);
+                        if (!is_file($this->joinPath($releaseRoot, $normalizedBaselinePath))) {
+                            $warnings[] = 'Laravel release declares baseline schema metadata, but the schema artifact was not found: ' . $baselinePath . '.';
+                        }
+                    }
+                }
+            }
         }
 
         if (is_array($checksum) && ($checksum['status'] ?? '') === 'failed') {
@@ -1915,6 +2332,1139 @@ final class KitSetupRunner
         $report['after'] = $decoded['after'] ?? [];
         $report['finished_at'] = date(DATE_ATOM);
         return $report;
+    }
+
+    private function runFirewallApply(array $config, array $context): array
+    {
+        $platform = is_array($config['platform'] ?? null) ? $config['platform'] : [];
+        $firewall = is_array($platform['firewall'] ?? null) ? $platform['firewall'] : [];
+        $mode = (string) ($firewall['update_mode'] ?? 'apply');
+        $rules = $this->normalizeFirewallRules($firewall['inbound_rules'] ?? null);
+        $report = [
+            'schema_version' => 1,
+            'kit_setup_version' => self::VERSION,
+            'action' => 'firewall-apply',
+            'status' => 'running',
+            'started_at' => $context['started_at'],
+            'finished_at' => null,
+            'run_id' => $context['run_id'],
+            'run_dir' => $context['run_dir'],
+            'platform' => PHP_OS_FAMILY,
+            'update_mode' => $mode,
+            'requires_admin' => true,
+            'rules' => [],
+            'warnings' => [],
+            'errors' => [],
+        ];
+
+        if ($mode !== 'apply') {
+            $report['status'] = 'skipped';
+            $report['rules'] = $rules;
+            $report['warnings'][] = 'platform.firewall.update_mode is not apply; firewall rules were not changed.';
+            $report['finished_at'] = date(DATE_ATOM);
+            return $report;
+        }
+
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $report['status'] = 'failed';
+            $report['errors'][] = 'firewall-apply currently supports Windows only.';
+            $report['finished_at'] = date(DATE_ATOM);
+            return $report;
+        }
+
+        if ($rules === []) {
+            $report['status'] = 'skipped';
+            $report['warnings'][] = 'No firewall inbound rules were configured.';
+            $report['finished_at'] = date(DATE_ATOM);
+            return $report;
+        }
+
+        $failed = false;
+        foreach ($rules as $rule) {
+            $ruleResult = $rule;
+            $delete = $this->runProcess([
+                'netsh',
+                'advfirewall',
+                'firewall',
+                'delete',
+                'rule',
+                'name=' . $rule['name'],
+            ], (string) getcwd());
+            $ruleResult['delete_exit_code'] = $delete['exit_code'];
+            $ruleResult['delete_stdout'] = trim((string) $delete['stdout']);
+            $ruleResult['delete_stderr'] = trim((string) $delete['stderr']);
+
+            $add = $this->runProcess([
+                'netsh',
+                'advfirewall',
+                'firewall',
+                'add',
+                'rule',
+                'name=' . $rule['name'],
+                'dir=in',
+                'action=allow',
+                'protocol=' . $rule['protocol'],
+                'localport=' . (string) $rule['local_port'],
+                'profile=' . $rule['profile'],
+                'enable=yes',
+            ], (string) getcwd());
+            $ruleResult['add_exit_code'] = $add['exit_code'];
+            $ruleResult['add_stdout'] = trim((string) $add['stdout']);
+            $ruleResult['add_stderr'] = trim((string) $add['stderr']);
+            $ruleResult['status'] = $add['exit_code'] === 0 ? 'success' : 'failed';
+            if ($ruleResult['status'] === 'failed') {
+                $failed = true;
+                $report['errors'][] = 'Failed to add firewall rule: ' . $rule['name'];
+            }
+            $report['rules'][] = $ruleResult;
+        }
+
+        $report['status'] = $failed ? 'failed' : 'success';
+        $report['finished_at'] = date(DATE_ATOM);
+        return $report;
+    }
+
+    private function normalizeFirewallRules($rules): array
+    {
+        if (!is_array($rules) || $rules === []) {
+            $rules = [
+                [
+                    'name' => 'Project Bantay Bayan HTTP',
+                    'protocol' => 'TCP',
+                    'local_port' => 80,
+                    'profile' => 'any',
+                ],
+                [
+                    'name' => 'Project Bantay Bayan HTTPS',
+                    'protocol' => 'TCP',
+                    'local_port' => 443,
+                    'profile' => 'any',
+                ],
+            ];
+        }
+
+        $normalized = [];
+        foreach ($rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            $port = (int) ($rule['local_port'] ?? $rule['port'] ?? 0);
+            $protocol = strtoupper((string) ($rule['protocol'] ?? 'TCP'));
+            $name = trim((string) ($rule['name'] ?? ''));
+            $profile = strtolower((string) ($rule['profile'] ?? 'any'));
+            if ($name === '') {
+                $name = 'Project Bantay Bayan ' . $protocol . ' ' . $port;
+            }
+            if ($port <= 0 || $port > 65535 || !in_array($protocol, ['TCP', 'UDP'], true)) {
+                continue;
+            }
+            if (!in_array($profile, ['any', 'domain', 'private', 'public'], true)) {
+                $profile = 'any';
+            }
+            $normalized[] = [
+                'name' => $name,
+                'protocol' => $protocol,
+                'local_port' => $port,
+                'profile' => $profile,
+            ];
+        }
+
+        return $normalized;
+    }
+
+    private function runRuntimeServicePlan(array $config, array $context): array
+    {
+        $services = array_map(fn (array $service): array => $this->withWinSwServiceMetadata($service), $this->collectRuntimeServices($config));
+
+        return [
+            'schema_version' => 1,
+            'kit_setup_version' => self::VERSION,
+            'action' => 'service-plan',
+            'status' => 'success',
+            'started_at' => $context['started_at'],
+            'finished_at' => date(DATE_ATOM),
+            'run_id' => $context['run_id'],
+            'run_dir' => $context['run_dir'],
+            'service_wrapper' => self::SERVICE_WRAPPER,
+            'service_root' => $this->winSwServiceRoot(),
+            'wrapper_binary' => $this->winSwSourceBinaryPath(),
+            'service_count' => count($services),
+            'runtime_services' => $services,
+            'warnings' => [],
+            'errors' => [],
+        ];
+    }
+
+    private function runRuntimeServiceStart(array $config, array $context): array
+    {
+        $services = $this->collectRuntimeServices($config);
+        $starts = [];
+        $warnings = [];
+        $errors = [];
+
+        $serviceRunDir = $this->joinPath((string) $context['run_dir'], 'runtime-services');
+        $this->ensureDirectory($serviceRunDir);
+
+        foreach ($services as $service) {
+            $start = $this->startRuntimeService($service, $serviceRunDir);
+            $starts[] = $start;
+            if (($start['status'] ?? '') === 'failed') {
+                $errors[] = (string) ($start['message'] ?? ('Runtime service start failed: ' . ($service['id'] ?? 'unknown')));
+            } elseif (($start['status'] ?? '') === 'warning') {
+                $warnings[] = (string) ($start['message'] ?? ('Runtime service start warning: ' . ($service['id'] ?? 'unknown')));
+            }
+        }
+
+        return [
+            'schema_version' => 1,
+            'kit_setup_version' => self::VERSION,
+            'action' => 'service-start',
+            'status' => count($errors) > 0 ? 'failed' : (count($warnings) > 0 ? 'warning' : 'success'),
+            'started_at' => $context['started_at'],
+            'finished_at' => date(DATE_ATOM),
+            'run_id' => $context['run_id'],
+            'run_dir' => $context['run_dir'],
+            'service_wrapper' => self::SERVICE_WRAPPER,
+            'service_root' => $this->winSwServiceRoot(),
+            'service_count' => count($services),
+            'runtime_services' => $starts,
+            'warnings' => $warnings,
+            'errors' => $errors,
+        ];
+    }
+
+    private function runRuntimeServiceVerify(array $config, array $context): array
+    {
+        $services = $this->collectRuntimeServices($config);
+        $checks = [];
+        $warnings = [];
+        $errors = [];
+
+        foreach ($services as $service) {
+            $check = $this->inspectRuntimeService($service);
+            $checks[] = $check;
+            if (($check['status'] ?? '') === 'failed') {
+                $errors[] = (string) ($check['message'] ?? ('Runtime service failed: ' . ($service['id'] ?? 'unknown')));
+            } elseif (($check['status'] ?? '') === 'warning') {
+                $warnings[] = (string) ($check['message'] ?? ('Runtime service warning: ' . ($service['id'] ?? 'unknown')));
+            }
+        }
+
+        $cleanup = null;
+        if (count($errors) > 0) {
+            $cleanup = $this->stopRuntimeServicesStartedByRun($context, 'service-verify failed');
+            foreach (($cleanup['warnings'] ?? []) as $warning) {
+                $warnings[] = (string) $warning;
+            }
+        }
+
+        return [
+            'schema_version' => 1,
+            'kit_setup_version' => self::VERSION,
+            'action' => 'service-verify',
+            'status' => count($errors) > 0 ? 'failed' : (count($warnings) > 0 ? 'warning' : 'success'),
+            'started_at' => $context['started_at'],
+            'finished_at' => date(DATE_ATOM),
+            'run_id' => $context['run_id'],
+            'run_dir' => $context['run_dir'],
+            'service_wrapper' => self::SERVICE_WRAPPER,
+            'service_root' => $this->winSwServiceRoot(),
+            'service_count' => count($services),
+            'runtime_services' => $checks,
+            'cleanup' => $cleanup,
+            'warnings' => $warnings,
+            'errors' => $errors,
+        ];
+    }
+
+    private function runRuntimeServiceStop(array $config, array $context): array
+    {
+        $declared = $this->stopRuntimeServicesDeclaredByConfig($config, 'service-stop requested');
+        $started = $this->stopRuntimeServicesStartedByRun($context, 'service-stop requested');
+        $seenPids = [];
+        $seenServices = [];
+        $runtimeServices = [];
+        foreach (array_merge($declared['runtime_services'] ?? [], $started['runtime_services'] ?? []) as $service) {
+            $pid = (string) ($service['process_id'] ?? '');
+            if ($pid !== '' && isset($seenPids[$pid])) {
+                continue;
+            }
+            if ($pid !== '') {
+                $seenPids[$pid] = true;
+            }
+            $serviceId = (string) ($service['service_id'] ?? '');
+            if ($serviceId !== '') {
+                if (isset($seenServices[$serviceId])) {
+                    continue;
+                }
+                $seenServices[$serviceId] = true;
+            }
+            $runtimeServices[] = $service;
+        }
+        $warnings = array_values(array_merge($declared['warnings'] ?? [], $started['warnings'] ?? []));
+        $errors = array_values(array_merge($declared['errors'] ?? [], $started['errors'] ?? []));
+        return [
+            'schema_version' => 1,
+            'kit_setup_version' => self::VERSION,
+            'action' => 'service-stop',
+            'status' => count($errors) > 0 ? 'failed' : (count($warnings) > 0 ? 'warning' : 'success'),
+            'started_at' => $context['started_at'],
+            'finished_at' => date(DATE_ATOM),
+            'run_id' => $context['run_id'],
+            'run_dir' => $context['run_dir'],
+            'service_wrapper' => self::SERVICE_WRAPPER,
+            'service_root' => $this->winSwServiceRoot(),
+            'service_count' => count($runtimeServices),
+            'runtime_services' => $runtimeServices,
+            'warnings' => $warnings,
+            'errors' => $errors,
+        ];
+    }
+
+    private function startRuntimeService(array $service, string $serviceRunDir): array
+    {
+        $id = (string) ($service['id'] ?? 'runtime-service');
+        $type = strtolower((string) ($service['type'] ?? 'background_process'));
+        $spec = $this->winSwServiceSpec($service);
+        $result = [
+            'app_id' => $service['app_id'] ?? null,
+            'id' => $id,
+            'name' => $service['name'] ?? null,
+            'type' => $service['type'] ?? null,
+            'required' => ($service['required'] ?? true) !== false,
+            'required_for_smoke' => ($service['required_for_smoke'] ?? false) === true,
+            'manager' => $service['manager'] ?? null,
+            'service_wrapper' => self::SERVICE_WRAPPER,
+            'service_id' => $spec['service_id'],
+            'service_dir' => $spec['service_dir'],
+            'service_exe' => $spec['service_exe'],
+            'service_config' => $spec['service_config'],
+            'service_log_dir' => $spec['log_dir'],
+            'working_directory' => $service['working_directory'] ?? null,
+            'command' => $service['command'] ?? null,
+            'args' => $service['args'] ?? [],
+            'env' => $service['env'] ?? [],
+            'health_check' => is_array($service['health_check'] ?? null) ? $service['health_check'] : [],
+            'status' => 'warning',
+            'message' => 'Runtime service was not started.',
+        ];
+
+        $existing = $this->inspectRuntimeService($service);
+        if (($existing['status'] ?? '') === 'success') {
+            $result['status'] = 'success';
+            $result['message'] = 'WinSW service is already running and health check passed.';
+            $result['health'] = $existing;
+            return $result;
+        }
+
+        if ($type !== 'background_process') {
+            $result['message'] = 'Runtime service type is not supported for WinSW service registration.';
+            return $result;
+        }
+
+        $command = (string) ($service['command'] ?? '');
+        $cwd = (string) ($service['working_directory'] ?? '');
+        if ($command === '' || $cwd === '' || !is_dir($cwd)) {
+            $result['status'] = (($service['required'] ?? true) !== false) ? 'failed' : 'warning';
+            $result['message'] = 'Runtime service command or working directory is not valid.';
+            return $result;
+        }
+
+        $prepare = $this->prepareWinSwService($service);
+        $result['prepare'] = $prepare;
+        if (($prepare['status'] ?? '') !== 'success') {
+            $result['status'] = (($service['required'] ?? true) !== false) ? 'failed' : 'warning';
+            $result['message'] = 'WinSW service preparation failed: ' . (string) ($prepare['message'] ?? 'unknown');
+            return $result;
+        }
+
+        $serviceStatus = $this->queryWindowsService($spec['service_id']);
+        if (($serviceStatus['status'] ?? '') === 'not-found') {
+            $install = $this->runWinSwCommand($spec, 'install');
+            $result['install'] = $install;
+            if ((int) ($install['exit_code'] ?? 1) !== 0) {
+                $result['status'] = (($service['required'] ?? true) !== false) ? 'failed' : 'warning';
+                $result['message'] = 'WinSW service install failed.';
+                return $result;
+            }
+            $result['installed_by_current_run'] = true;
+        } else {
+            $result['install'] = [
+                'status' => 'skipped',
+                'message' => 'Windows service already exists.',
+                'service' => $serviceStatus,
+            ];
+        }
+
+        $start = $this->runWinSwCommand($spec, 'start');
+        $result['start'] = $start;
+        $result['started_by_current_run'] = true;
+        if ((int) ($start['exit_code'] ?? 1) !== 0 && !$this->winSwOutputIndicatesAlreadyRunning($start)) {
+            $result['status'] = (($service['required'] ?? true) !== false) ? 'failed' : 'warning';
+            $result['message'] = 'WinSW service start failed.';
+            return $result;
+        }
+
+        $health = $this->waitForRuntimeServiceHealth($service);
+        $result['health'] = $health;
+        if (($health['status'] ?? '') === 'success') {
+            $result['status'] = 'success';
+            $result['message'] = 'WinSW service started and health check passed.';
+            return $result;
+        }
+        if (($health['status'] ?? '') === 'warning') {
+            $result['status'] = 'warning';
+            $result['message'] = 'WinSW service was started, but health could not be fully verified.';
+            return $result;
+        }
+
+        $result['status'] = (($service['required'] ?? true) !== false) ? 'failed' : 'warning';
+        $result['message'] = 'WinSW service was started, but health check did not pass: ' . (string) ($health['message'] ?? 'unknown');
+        $result['cleanup'] = $this->stopWinSwService($service, 'service-start health check failed');
+        return $result;
+    }
+
+    private function stopRuntimeServicesStartedByRun(array $context, string $reason): array
+    {
+        $startPath = $this->joinPath((string) $context['run_dir'], 'service-start.json');
+        $startReport = $this->readOptionalJson($startPath);
+        $services = is_array($startReport) && is_array($startReport['runtime_services'] ?? null)
+            ? $startReport['runtime_services']
+            : [];
+        $stops = [];
+        $warnings = [];
+        $errors = [];
+
+        foreach ($services as $service) {
+            if (!is_array($service) || ($service['started_by_current_run'] ?? false) !== true) {
+                continue;
+            }
+            $stop = $this->stopWinSwService($service, $reason);
+            $stops[] = [
+                'app_id' => $service['app_id'] ?? null,
+                'id' => $service['id'] ?? null,
+                'name' => $service['name'] ?? null,
+                ...$stop,
+            ];
+            if (($stop['status'] ?? '') === 'failed') {
+                $errors[] = (string) ($stop['message'] ?? ('Failed to stop service ' . (string) ($service['id'] ?? 'runtime-service')));
+            } elseif (($stop['status'] ?? '') === 'warning') {
+                $warnings[] = (string) ($stop['message'] ?? ('Unable to confirm service stop ' . (string) ($service['id'] ?? 'runtime-service')));
+            }
+        }
+
+        return [
+            'status' => count($errors) > 0 ? 'failed' : (count($warnings) > 0 ? 'warning' : 'success'),
+            'reason' => $reason,
+            'runtime_services' => $stops,
+            'warnings' => $warnings,
+            'errors' => $errors,
+        ];
+    }
+
+    private function stopRuntimeServicesDeclaredByConfig(array $config, string $reason): array
+    {
+        $stops = [];
+        $warnings = [];
+        $errors = [];
+
+        foreach ($this->collectPreDeployRuntimeServices($config) as $service) {
+            if (!is_array($service)) {
+                continue;
+            }
+            $status = $this->queryWindowsService($this->winSwServiceSpec($service)['service_id']);
+            if (($status['status'] ?? '') === 'not-found') {
+                continue;
+            }
+            $stop = $this->stopWinSwService($service, $reason);
+            $stops[] = [
+                'app_id' => $service['app_id'] ?? null,
+                'id' => $service['id'] ?? null,
+                'name' => $service['name'] ?? null,
+                ...$stop,
+            ];
+            if (($stop['status'] ?? '') === 'failed') {
+                $errors[] = (string) ($stop['message'] ?? ('Failed to stop service ' . (string) ($service['id'] ?? 'runtime-service')));
+            } elseif (($stop['status'] ?? '') === 'warning') {
+                $warnings[] = (string) ($stop['message'] ?? ('Unable to confirm service stop ' . (string) ($service['id'] ?? 'runtime-service')));
+            }
+        }
+
+        return [
+            'status' => count($errors) > 0 ? 'failed' : (count($warnings) > 0 ? 'warning' : 'success'),
+            'reason' => $reason,
+            'runtime_services' => $stops,
+            'warnings' => $warnings,
+            'errors' => $errors,
+        ];
+    }
+
+    private function collectPreDeployRuntimeServices(array $config): array
+    {
+        $services = [];
+        foreach ($config['apps'] ?? [] as $app) {
+            if (!is_array($app) || ($app['enabled'] ?? true) === false || (string) ($app['install_scope'] ?? 'local') !== 'local') {
+                continue;
+            }
+            if (!$this->appNeedsPreDeployRuntimeStop($app)) {
+                continue;
+            }
+            $appId = (string) ($app['id'] ?? '');
+            foreach ($this->appRuntimeServices($appId, $app, $config) as $service) {
+                $services[] = $service;
+            }
+        }
+        return $services;
+    }
+
+    private function appNeedsPreDeployRuntimeStop(array $app): bool
+    {
+        $decision = strtolower((string) ($app['install_decision'] ?? 'install'));
+        if (in_array($decision, ['repair', 'overwrite'], true)) {
+            return true;
+        }
+
+        foreach (['install_manifest', 'install_report'] as $artifactKey) {
+            $artifact = $this->readAppArtifact($app, $artifactKey);
+            if (is_array($artifact) && ($artifact['exists'] ?? false) === true) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function withWinSwServiceMetadata(array $service): array
+    {
+        $spec = $this->winSwServiceSpec($service);
+        return [
+            ...$service,
+            'service_wrapper' => self::SERVICE_WRAPPER,
+            'service_id' => $spec['service_id'],
+            'service_dir' => $spec['service_dir'],
+            'service_exe' => $spec['service_exe'],
+            'service_config' => $spec['service_config'],
+            'service_log_dir' => $spec['log_dir'],
+            'wrapper_source' => $this->winSwSourceBinaryPath(),
+        ];
+    }
+
+    private function prepareWinSwService(array $service): array
+    {
+        $spec = $this->winSwServiceSpec($service);
+        $source = $this->winSwSourceBinaryPath();
+        $result = [
+            'service_wrapper' => self::SERVICE_WRAPPER,
+            'source_binary' => $source,
+            'service_id' => $spec['service_id'],
+            'service_dir' => $spec['service_dir'],
+            'service_exe' => $spec['service_exe'],
+            'service_config' => $spec['service_config'],
+            'service_log_dir' => $spec['log_dir'],
+            'status' => 'failed',
+            'message' => '',
+        ];
+
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $result['message'] = 'WinSW service registration requires Windows.';
+            return $result;
+        }
+        if (!is_file($source)) {
+            $result['message'] = 'WinSW binary is missing: ' . $source;
+            return $result;
+        }
+
+        try {
+            $this->ensureDirectory($spec['service_dir']);
+            $this->ensureDirectory($spec['log_dir']);
+            if (!is_file($spec['service_exe']) || hash_file('sha256', $spec['service_exe']) !== hash_file('sha256', $source)) {
+                if (!copy($source, $spec['service_exe'])) {
+                    throw new RuntimeException('Unable to copy WinSW binary to service directory.');
+                }
+            }
+            file_put_contents($spec['service_config'], $this->buildWinSwXml($service, $spec));
+            $result['status'] = 'success';
+            $result['message'] = 'WinSW service files are ready.';
+        } catch (Throwable $e) {
+            $result['message'] = $e->getMessage();
+        }
+
+        return $result;
+    }
+
+    private function stopWinSwService(array $service, string $reason): array
+    {
+        $spec = $this->winSwServiceSpec($service);
+        $result = [
+            'service_wrapper' => self::SERVICE_WRAPPER,
+            'service_id' => $spec['service_id'],
+            'service_dir' => $spec['service_dir'],
+            'service_exe' => $spec['service_exe'],
+            'service_config' => $spec['service_config'],
+            'service_log_dir' => $spec['log_dir'],
+            'reason' => $reason,
+            'status' => 'skipped',
+            'message' => 'Windows service is not installed.',
+        ];
+
+        $query = $this->queryWindowsService($spec['service_id']);
+        $result['service'] = $query;
+        if (($query['status'] ?? '') === 'not-found') {
+            return $result;
+        }
+        if (!is_file($spec['service_exe'])) {
+            $result['status'] = 'failed';
+            $result['message'] = 'WinSW service executable is missing: ' . $spec['service_exe'];
+            return $result;
+        }
+        if (($query['state'] ?? '') === 'STOPPED') {
+            $result['status'] = 'success';
+            $result['message'] = 'Windows service is already stopped.';
+            return $result;
+        }
+
+        $stop = $this->runWinSwCommand($spec, 'stop', 45);
+        $after = $this->queryWindowsService($spec['service_id']);
+        $result['stop'] = $stop;
+        $result['service_after_stop'] = $after;
+        if (($after['state'] ?? '') === 'STOPPED' || (($after['status'] ?? '') === 'not-found')) {
+            $result['status'] = 'success';
+            $result['message'] = 'WinSW service was stopped.';
+            return $result;
+        }
+
+        $result['status'] = 'failed';
+        $result['message'] = 'WinSW service stop could not be confirmed.';
+        return $result;
+    }
+
+    private function runWinSwCommand(array $spec, string $command, int $timeoutSeconds = 30): array
+    {
+        if (!is_file($spec['service_exe'])) {
+            return [
+                'command' => $spec['service_exe'] . ' ' . $command,
+                'exit_code' => 1,
+                'stdout' => '',
+                'stderr' => 'WinSW service executable is missing.',
+            ];
+        }
+        return $this->runProcess([$spec['service_exe'], $command], $spec['service_dir'], null, $timeoutSeconds);
+    }
+
+    private function queryWindowsService(string $serviceId): array
+    {
+        $result = [
+            'service_id' => $serviceId,
+            'status' => 'not-found',
+            'state' => null,
+        ];
+        if ($serviceId === '' || PHP_OS_FAMILY !== 'Windows') {
+            $result['status'] = 'not-supported';
+            return $result;
+        }
+
+        $process = $this->runProcess(['sc.exe', 'query', $serviceId], (string) getcwd(), null, 15);
+        $output = trim((string) ($process['stdout'] ?? '') . PHP_EOL . (string) ($process['stderr'] ?? ''));
+        $result['exit_code'] = $process['exit_code'] ?? null;
+        $result['output'] = $output;
+        if ((int) ($process['exit_code'] ?? 1) !== 0) {
+            return $result;
+        }
+        if (preg_match('/STATE\s*:\s*\d+\s+([A-Z_]+)/i', $output, $matches) === 1) {
+            $state = strtoupper($matches[1]);
+            $result['state'] = $state;
+            $result['status'] = $state === 'RUNNING' ? 'running' : 'stopped';
+            return $result;
+        }
+        $result['status'] = 'unknown';
+        return $result;
+    }
+
+    private function winSwOutputIndicatesAlreadyRunning(array $process): bool
+    {
+        $output = strtolower(trim((string) ($process['stdout'] ?? '') . ' ' . (string) ($process['stderr'] ?? '')));
+        return str_contains($output, 'already running') || str_contains($output, 'service is running');
+    }
+
+    private function winSwServiceSpec(array $service): array
+    {
+        $serviceId = $this->sanitizeWindowsServiceId((string) ($service['id'] ?? 'pbb-runtime-service'));
+        $root = $this->winSwServiceRoot();
+        $serviceDir = $this->joinPath($root, $serviceId);
+        return [
+            'service_id' => $serviceId,
+            'service_dir' => $serviceDir,
+            'service_exe' => $this->joinPath($serviceDir, $serviceId . '.exe'),
+            'service_config' => $this->joinPath($serviceDir, $serviceId . '.xml'),
+            'log_dir' => $this->joinPath($serviceDir, 'logs'),
+        ];
+    }
+
+    private function sanitizeWindowsServiceId(string $id): string
+    {
+        $id = trim($id) !== '' ? trim($id) : 'pbb-runtime-service';
+        $id = preg_replace('/[^A-Za-z0-9_.-]+/', '-', $id) ?: 'pbb-runtime-service';
+        return substr($id, 0, 180);
+    }
+
+    private function winSwServiceRoot(): string
+    {
+        $programData = getenv('ProgramData');
+        if (!is_string($programData) || trim($programData) === '') {
+            $programData = 'C:\\ProgramData';
+        }
+        return $this->joinPath($programData, 'PBB\\Services');
+    }
+
+    private function winSwSourceBinaryPath(): string
+    {
+        return $this->joinPath(dirname(__DIR__), 'assets\\winsw\\WinSW-x64.exe');
+    }
+
+    private function buildWinSwXml(array $service, array $spec): string
+    {
+        $args = [];
+        foreach (($service['args'] ?? []) as $arg) {
+            $args[] = $this->windowsCommandLineArg((string) $arg);
+        }
+        $env = is_array($service['env'] ?? null) ? $service['env'] : [];
+        $envLines = [];
+        foreach ($env as $key => $value) {
+            $name = preg_replace('/[^A-Za-z0-9_]/', '', (string) $key);
+            if ($name === '') {
+                continue;
+            }
+            $envLines[] = '  <env name="' . $this->xmlEscape($name) . '" value="' . $this->xmlEscape((string) $value) . '"/>';
+        }
+
+        $description = trim((string) ($service['notes'] ?? ''));
+        if ($description === '') {
+            $description = 'Project Bantay Bayan runtime service managed by Kit Setup.';
+        }
+
+        $lines = [
+            '<service>',
+            '  <id>' . $this->xmlEscape($spec['service_id']) . '</id>',
+            '  <name>' . $this->xmlEscape((string) ($service['name'] ?? $spec['service_id'])) . '</name>',
+            '  <description>' . $this->xmlEscape($description) . '</description>',
+            '  <executable>' . $this->xmlEscape((string) ($service['command'] ?? '')) . '</executable>',
+            '  <arguments>' . $this->xmlEscape(implode(' ', $args)) . '</arguments>',
+            '  <workingdirectory>' . $this->xmlEscape((string) ($service['working_directory'] ?? '')) . '</workingdirectory>',
+            '  <startmode>Automatic</startmode>',
+            '  <stoptimeout>15 sec</stoptimeout>',
+            '  <logpath>' . $this->xmlEscape($spec['log_dir']) . '</logpath>',
+            '  <log mode="roll-by-size">',
+            '    <sizeThreshold>10485760</sizeThreshold>',
+            '    <keepFiles>8</keepFiles>',
+            '  </log>',
+            '  <onfailure action="restart" delay="10 sec"/>',
+        ];
+        foreach ($envLines as $line) {
+            $lines[] = $line;
+        }
+        $lines[] = '</service>';
+        return implode("\r\n", $lines) . "\r\n";
+    }
+
+    private function windowsCommandLineArg(string $value): string
+    {
+        if ($value === '') {
+            return '""';
+        }
+        if (!preg_match('/[\s"]/', $value)) {
+            return $value;
+        }
+        return '"' . str_replace('"', '\"', $value) . '"';
+    }
+
+    private function xmlEscape(string $value): string
+    {
+        return htmlspecialchars($value, ENT_XML1 | ENT_COMPAT, 'UTF-8');
+    }
+
+    private function terminateRuntimeProcess(int $pid, string $serviceId, string $reason): array
+    {
+        if ($pid <= 0) {
+            return [
+                'status' => 'skipped',
+                'message' => 'Runtime process did not have a valid PID.',
+            ];
+        }
+        if (PHP_OS_FAMILY === 'Windows') {
+            $process = $this->runProcess(['taskkill.exe', '/PID', (string) $pid, '/T', '/F'], (string) getcwd());
+        } else {
+            $process = $this->runProcess(['sh', '-c', 'kill -TERM ' . escapeshellarg((string) $pid)], (string) getcwd());
+        }
+        $status = (int) ($process['exit_code'] ?? 1) === 0 ? 'success' : 'warning';
+        $output = trim((string) ($process['stdout'] ?? '') . ' ' . (string) ($process['stderr'] ?? ''));
+        if ($status === 'warning' && PHP_OS_FAMILY === 'Windows' && preg_match('/process\s+"?' . preg_quote((string) $pid, '/') . '"?\s+not\s+found/i', $output)) {
+            $status = 'success';
+        }
+        return [
+            'status' => $status,
+            'service_id' => $serviceId,
+            'reason' => $reason,
+            'command' => $process['command'] ?? '',
+            'exit_code' => $process['exit_code'] ?? null,
+            'message' => $status === 'success'
+                ? (((int) ($process['exit_code'] ?? 1) === 0) ? 'Runtime service process was stopped.' : 'Runtime service process was already stopped.')
+                : ('Runtime service process stop could not be confirmed' . ($output !== '' ? ': ' . $output : '.')),
+        ];
+    }
+
+    private function writeRuntimeServiceCommandScript(string $scriptPath, array $service, string $stdoutPath, string $stderrPath): void
+    {
+        $lines = ['@echo off'];
+        $lines[] = 'cd /d ' . $this->cmdQuote((string) ($service['working_directory'] ?? ''));
+        $env = is_array($service['env'] ?? null) ? $service['env'] : [];
+        foreach ($env as $key => $value) {
+            $name = preg_replace('/[^A-Za-z0-9_]/', '', (string) $key);
+            if ($name === '') {
+                continue;
+            }
+            $lines[] = 'set "' . $name . '=' . str_replace('"', '\"', (string) $value) . '"';
+        }
+        $command = $this->cmdQuote((string) ($service['command'] ?? ''));
+        $args = [];
+        foreach (($service['args'] ?? []) as $arg) {
+            $args[] = $this->cmdQuote((string) $arg);
+        }
+        $lines[] = trim($command . ' ' . implode(' ', $args)) . ' >> ' . $this->cmdQuote($stdoutPath) . ' 2>> ' . $this->cmdQuote($stderrPath);
+        file_put_contents($scriptPath, implode("\r\n", $lines) . "\r\n");
+    }
+
+    private function waitForRuntimeServiceHealth(array $service): array
+    {
+        $health = is_array($service['health_check'] ?? null) ? $service['health_check'] : [];
+        $timeoutSeconds = max(1, (float) ($health['timeout_seconds'] ?? 5));
+        $deadline = microtime(true) + max(3, $timeoutSeconds);
+        if (strtolower((string) ($health['type'] ?? '')) === 'process') {
+            $last = $this->inspectRuntimeService($service);
+            $sawSuccess = false;
+            while (microtime(true) < $deadline) {
+                $last = $this->inspectRuntimeService($service);
+                if (($last['status'] ?? '') === 'success') {
+                    $sawSuccess = true;
+                } elseif ($sawSuccess) {
+                    $last['status'] = (($service['required'] ?? true) !== false) ? 'failed' : 'warning';
+                    $last['message'] = 'Runtime process service exited before the health check stability window completed.';
+                    return $last;
+                }
+                usleep(250000);
+            }
+            return $last;
+        }
+        $last = $this->inspectRuntimeService($service);
+        while (($last['status'] ?? '') !== 'success' && microtime(true) < $deadline) {
+            usleep(250000);
+            $last = $this->inspectRuntimeService($service);
+        }
+        return $last;
+    }
+
+    private function cmdQuote(string $value): string
+    {
+        return '"' . str_replace('"', '\"', $value) . '"';
+    }
+
+    private function collectRuntimeServices(array $config): array
+    {
+        $services = [];
+        foreach ($config['apps'] ?? [] as $app) {
+            if (!is_array($app) || ($app['enabled'] ?? true) === false || (string) ($app['install_scope'] ?? 'local') !== 'local') {
+                continue;
+            }
+            $appId = (string) ($app['id'] ?? '');
+            foreach ($this->appRuntimeServices($appId, $app, $config) as $service) {
+                $services[] = $service;
+            }
+        }
+        return $services;
+    }
+
+    private function appRuntimeServices(string $appId, array $app, array $config): array
+    {
+        $sources = [
+            ['name' => 'app.runtime_services', 'items' => $app['runtime_services'] ?? null],
+            ['name' => 'app.config.runtime_services', 'items' => $app['config']['runtime_services'] ?? null],
+            ['name' => 'release.runtime_services', 'items' => $this->releaseRuntimeServices($app)],
+            ['name' => 'installed.runtime_services', 'items' => $this->installedRuntimeServices($app)],
+        ];
+
+        $services = [];
+        foreach ($sources as $source) {
+            if (!is_array($source['items'])) {
+                continue;
+            }
+            foreach ($source['items'] as $service) {
+                if (is_array($service)) {
+                    $services[] = $this->normalizeRuntimeService($service, $appId, $app, $config, (string) $source['name']);
+                }
+            }
+        }
+
+        $byId = [];
+        $anonymous = [];
+        foreach ($services as $service) {
+            $id = (string) ($service['id'] ?? '');
+            if ($id !== '') {
+                $byId[$id] = $service;
+            } else {
+                $anonymous[] = $service;
+            }
+        }
+        return array_values(array_merge($byId, $anonymous));
+    }
+
+    private function normalizeRuntimeService(array $service, string $appId, array $app, array $config, string $source): array
+    {
+        $id = trim((string) ($service['id'] ?? ''));
+        $healthCheck = is_array($service['health_check'] ?? null)
+            ? $service['health_check']
+            : (is_array($service['healthcheck'] ?? null) ? $service['healthcheck'] : []);
+
+        $normalized = [
+            'app_id' => $appId,
+            'id' => $id !== '' ? $id : trim($appId . '-runtime-service'),
+            'name' => (string) ($service['name'] ?? $id),
+            'type' => (string) ($service['type'] ?? $service['kind'] ?? 'background_process'),
+            'required' => ($service['required'] ?? true) !== false,
+            'required_for_smoke' => ($service['required_for_smoke'] ?? false) === true,
+            'manager' => (string) ($service['manager'] ?? 'kit'),
+            'working_directory' => $this->resolveRuntimeServiceValue((string) ($service['working_directory'] ?? $service['cwd'] ?? '{app.install_path}'), $app, $config),
+            'command' => $this->resolveRuntimeServiceValue((string) ($service['command'] ?? ''), $app, $config),
+            'args' => [],
+            'env' => $this->resolveRuntimeServiceValue(is_array($service['env'] ?? null) ? $service['env'] : [], $app, $config),
+            'health_check' => $this->resolveRuntimeServiceValue($healthCheck, $app, $config),
+            'logs' => $this->resolveRuntimeServiceValue(is_array($service['logs'] ?? null) ? $service['logs'] : [], $app, $config),
+            'notes' => (string) ($service['notes'] ?? ''),
+            'source' => $source,
+        ];
+
+        $args = is_array($service['args'] ?? null) ? $service['args'] : [];
+        foreach ($args as $arg) {
+            $normalized['args'][] = $this->resolveRuntimeServiceValue((string) $arg, $app, $config);
+        }
+
+        return $normalized;
+    }
+
+    private function resolveRuntimeServiceValue($value, array $app, array $config)
+    {
+        if (is_array($value)) {
+            $resolved = [];
+            foreach ($value as $key => $item) {
+                $resolved[$key] = $this->resolveRuntimeServiceValue($item, $app, $config);
+            }
+            return $resolved;
+        }
+        if (!is_string($value)) {
+            return $value;
+        }
+
+        $appConfig = is_array($app['config'] ?? null) ? $app['config'] : [];
+        $appUrl = (string) ($app['app_url'] ?? $appConfig['app_url'] ?? '');
+        $appHost = $appUrl !== '' ? (string) (parse_url($appUrl, PHP_URL_HOST) ?: '') : '';
+        $replacements = [
+            '{app.install_path}' => (string) ($app['install_path'] ?? $appConfig['install_path'] ?? ''),
+            '{app.public_path}' => (string) ($app['public_path'] ?? $appConfig['public_path'] ?? ''),
+            '{app.app_url}' => $appUrl,
+            '{app.host}' => $appHost,
+            '{runtime.php_binary}' => (string) ($config['runtime']['php_binary'] ?? 'php'),
+        ];
+        return strtr($value, $replacements);
+    }
+
+    private function releaseRuntimeServices(array $app): array
+    {
+        $release = is_array($app['release'] ?? null) ? $app['release'] : null;
+        if (!is_array($release)) {
+            $releasePath = (string) ($app['release_path'] ?? $app['config']['release_path'] ?? '');
+            if ($releasePath !== '') {
+                $release = $this->readOptionalJson($this->joinPath($releasePath, 'release.json'));
+            }
+        }
+        if (!is_array($release)) {
+            return [];
+        }
+
+        $services = $release['runtime_services'] ?? $release['installer']['runtime_services'] ?? null;
+        return is_array($services) ? $services : [];
+    }
+
+    private function installedRuntimeServices(array $app): array
+    {
+        $services = [];
+        foreach (['install_manifest', 'install_report'] as $artifactKey) {
+            $artifact = $this->readAppArtifact($app, $artifactKey);
+            $json = is_array($artifact) && ($artifact['exists'] ?? false) === true && is_array($artifact['json'] ?? null)
+                ? $artifact['json']
+                : null;
+            if (!is_array($json) || !is_array($json['runtime_services'] ?? null)) {
+                continue;
+            }
+            foreach ($json['runtime_services'] as $service) {
+                if (is_array($service)) {
+                    $services[] = $service;
+                }
+            }
+        }
+        return $services;
+    }
+
+    private function inspectRuntimeService(array $service): array
+    {
+        $health = is_array($service['health_check'] ?? null) ? $service['health_check'] : [];
+        $required = ($service['required'] ?? true) !== false;
+        $requiredForSmoke = ($service['required_for_smoke'] ?? false) === true;
+        $check = [
+            'app_id' => $service['app_id'] ?? null,
+            'id' => $service['id'] ?? null,
+            'name' => $service['name'] ?? null,
+            'type' => $service['type'] ?? null,
+            'required' => $required,
+            'required_for_smoke' => $requiredForSmoke,
+            'manager' => $service['manager'] ?? null,
+            'service_wrapper' => self::SERVICE_WRAPPER,
+            'service_id' => $this->winSwServiceSpec($service)['service_id'],
+            'working_directory' => $service['working_directory'] ?? null,
+            'command' => $service['command'] ?? null,
+            'args' => $service['args'] ?? [],
+            'env' => $service['env'] ?? [],
+            'health_check' => $health,
+            'status' => 'warning',
+            'message' => 'Runtime service does not declare a supported health_check.',
+        ];
+        $windowsService = $this->queryWindowsService($check['service_id']);
+        $check['windows_service'] = $windowsService;
+
+        $type = strtolower((string) ($health['type'] ?? ''));
+        if ($type === 'tcp') {
+            $host = (string) ($health['host'] ?? '127.0.0.1');
+            $port = (int) ($health['port'] ?? 0);
+            $timeoutSeconds = (float) ($health['timeout_seconds'] ?? 3);
+            $tcp = $this->inspectTcpPort($host, $port, $timeoutSeconds);
+            $check['tcp'] = $tcp;
+            $serviceRunning = ($windowsService['status'] ?? '') === 'running';
+            $check['status'] = ($tcp['status'] ?? '') === 'passed' && $serviceRunning ? 'success' : ($required ? 'failed' : 'warning');
+            $check['message'] = ($tcp['status'] ?? '') === 'passed' && $serviceRunning
+                ? 'WinSW service is running and runtime service health check passed.'
+                : 'Runtime service health check failed: ' . (string) ($tcp['message'] ?? 'TCP port is not reachable.');
+            if (!$serviceRunning) {
+                $check['message'] = 'WinSW service is not running.';
+            }
+            return $check;
+        }
+
+        if ($type === 'process') {
+            $check['status'] = ($windowsService['status'] ?? '') === 'running' ? 'success' : ($required ? 'failed' : 'warning');
+            $check['message'] = ($windowsService['status'] ?? '') === 'running'
+                ? 'WinSW service is running.'
+                : 'WinSW service is not running.';
+            return $check;
+        }
+
+        if ($required && $requiredForSmoke) {
+            $check['status'] = 'failed';
+            $check['message'] = 'Runtime service required for smoke is missing a supported health_check.';
+        }
+        return $check;
+    }
+
+    private function inspectRuntimeServiceProcess(array $service): array
+    {
+        $command = strtolower(basename(str_replace('\\', '/', (string) ($service['command'] ?? ''))));
+        $needles = [];
+        if ($command !== '') {
+            $needles[] = $command;
+        }
+        foreach (($service['args'] ?? []) as $arg) {
+            $arg = trim((string) $arg);
+            if ($arg !== '') {
+                $needles[] = strtolower($arg);
+            }
+        }
+        if (count($needles) === 0) {
+            return [
+                'status' => 'failed',
+                'message' => 'No command or args are available for process matching.',
+            ];
+        }
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $conditions = [];
+            foreach ($needles as $needle) {
+                $conditions[] = '$_.CommandLine.ToLower().Contains(' . $this->powershellSingleQuoted($needle) . ')';
+            }
+            $script = '$p = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and ' . implode(' -and ', $conditions) . ' } | Select-Object -First 1; if ($p) { Write-Output $p.ProcessId; exit 0 } exit 1';
+            $process = $this->runProcess(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $script], (string) getcwd());
+            $pid = trim((string) ($process['stdout'] ?? ''));
+            if ((int) ($process['exit_code'] ?? 1) === 0 && $pid !== '') {
+                return [
+                    'status' => 'passed',
+                    'pid' => $pid,
+                    'message' => 'Matching process is running.',
+                ];
+            }
+        } else {
+            $process = $this->runProcess(['ps', '-eo', 'pid,args'], (string) getcwd());
+            $stdout = strtolower((string) ($process['stdout'] ?? ''));
+            $matched = true;
+            foreach ($needles as $needle) {
+                if (!str_contains($stdout, $needle)) {
+                    $matched = false;
+                    break;
+                }
+            }
+            if ($matched) {
+                return [
+                    'status' => 'passed',
+                    'message' => 'Matching process is running.',
+                ];
+            }
+        }
+
+        return [
+            'status' => 'failed',
+            'message' => 'No matching process was found.',
+        ];
+    }
+
+    private function powershellSingleQuoted(string $value): string
+    {
+        return "'" . str_replace("'", "''", $value) . "'";
+    }
+
+    private function inspectTcpPort(string $host, int $port, float $timeoutSeconds): array
+    {
+        if ($host === '' || $port <= 0 || $port > 65535) {
+            return [
+                'host' => $host,
+                'port' => $port,
+                'status' => 'failed',
+                'message' => 'Invalid TCP health check host or port.',
+            ];
+        }
+
+        $errno = 0;
+        $errstr = '';
+        $socket = @fsockopen($host, $port, $errno, $errstr, max(0.1, $timeoutSeconds));
+        if (is_resource($socket)) {
+            fclose($socket);
+            return [
+                'host' => $host,
+                'port' => $port,
+                'status' => 'passed',
+                'message' => 'TCP port is reachable.',
+            ];
+        }
+
+        return [
+            'host' => $host,
+            'port' => $port,
+            'status' => 'failed',
+            'message' => $errstr !== '' ? $errstr : 'TCP port is not reachable.',
+        ];
     }
 
     private function runDnsVerify(array $config, array $context): array
@@ -2351,6 +3901,9 @@ POWERSHELL
         }
 
         $vhosts = $this->buildApacheVhosts($config, $certificateFile, $privateKeyFile, is_file($chainFile) ? $chainFile : '');
+        foreach (($vhosts['warnings'] ?? []) as $warning) {
+            $warnings[] = (string) $warning;
+        }
         if (count($vhosts['entries']) === 0) {
             $errors[] = 'No Apache vhosts were generated.';
         }
@@ -2391,6 +3944,7 @@ POWERSHELL
                 'configured_include_output' => $config['paths']['apache_include_output'] ?? null,
                 'apply_supported' => false,
                 'vhosts' => $vhosts['entries'],
+                'web_server_requirements' => $vhosts['requirements'] ?? [],
             ],
             'warnings' => $warnings,
             'errors' => $errors,
@@ -2791,6 +4345,8 @@ POWERSHELL
         ];
         $domains = is_array($config['domains'] ?? null) ? $config['domains'] : [];
         $entries = [];
+        $requirements = [];
+        $warnings = [];
         $blocks = [
             '# Generated by PBB Kit Setup. Review before including in Apache.',
             '# Generated at ' . date(DATE_ATOM),
@@ -2811,23 +4367,34 @@ POWERSHELL
             }
 
             $aliases = [];
+            $appRequirements = $this->appWebServerRequirements($appId, $app);
 
             $entries[] = [
                 'app_id' => $appId,
                 'server_name' => $host,
                 'server_aliases' => $aliases,
                 'document_root' => $documentRoot,
+                'web_server_requirements' => $appRequirements,
             ];
-            $blocks[] = $this->renderApacheVhostBlock($host, $aliases, $documentRoot, $certificateFile, $privateKeyFile, $chainFile);
+            foreach ($appRequirements as $requirement) {
+                $requirements[] = [
+                    'app_id' => $appId,
+                    'server_name' => $host,
+                    'requirement' => $requirement,
+                ];
+            }
+            $blocks[] = $this->renderApacheVhostBlock($host, $aliases, $documentRoot, $certificateFile, $privateKeyFile, $chainFile, $appRequirements, $warnings, $appId);
         }
 
         return [
             'entries' => $entries,
+            'requirements' => $requirements,
+            'warnings' => $warnings,
             'content' => implode(PHP_EOL, $blocks) . PHP_EOL,
         ];
     }
 
-    private function renderApacheVhostBlock(string $host, array $aliases, string $documentRoot, string $certificateFile, string $privateKeyFile, string $chainFile): string
+    private function renderApacheVhostBlock(string $host, array $aliases, string $documentRoot, string $certificateFile, string $privateKeyFile, string $chainFile, array $webServerRequirements = [], array &$warnings = [], string $appId = ''): string
     {
         $docRoot = $this->apachePath($documentRoot);
         $cert = $this->apachePath($certificateFile);
@@ -2855,6 +4422,11 @@ POWERSHELL
         if ($chain !== '') {
             $lines[] = '    SSLCertificateChainFile "' . $chain . '"';
         }
+        foreach ($webServerRequirements as $requirement) {
+            foreach ($this->renderApacheRequirementLines($requirement, $warnings, $appId) as $line) {
+                $lines[] = $line;
+            }
+        }
         $lines[] = '    <Directory "' . $docRoot . '">';
         $lines[] = '        Options FollowSymLinks';
         $lines[] = '        AllowOverride All';
@@ -2863,6 +4435,172 @@ POWERSHELL
         $lines[] = '</VirtualHost>';
         $lines[] = '';
         return implode(PHP_EOL, $lines);
+    }
+
+    private function renderApacheRequirementLines(array $requirement, array &$warnings, string $appId): array
+    {
+        if (!$this->isWebsocketProxyRequirement($requirement)) {
+            return [];
+        }
+
+        $path = (string) ($requirement['server_path'] ?? $requirement['path_prefix'] ?? '');
+        $upstream = (string) ($requirement['upstream_url'] ?? $requirement['upstream'] ?? '');
+        $id = (string) ($requirement['id'] ?? 'websocket_proxy');
+        if (!$this->isSafeApacheLocationPath($path) || !$this->isSafeApacheProxyTarget($upstream)) {
+            $warnings[] = trim($appId . ' ' . $id . ': skipped unsafe websocket proxy requirement.');
+            return [];
+        }
+
+        $lines = [
+            '    # App web-server requirement: ' . $id,
+            '    ProxyPreserveHost On',
+        ];
+        $directives = is_array($requirement['directives'] ?? null) ? $requirement['directives'] : [];
+        if (isset($directives['ProxyWebsocketFallbackToProxyHttp'])) {
+            $value = (string) $directives['ProxyWebsocketFallbackToProxyHttp'];
+            if (in_array($value, ['On', 'Off'], true)) {
+                $lines[] = '    ProxyWebsocketFallbackToProxyHttp ' . $value;
+            }
+        }
+        $lines[] = '    ProxyPass "' . $path . '" "' . $upstream . '"';
+        $lines[] = '    ProxyPassReverse "' . $path . '" "' . $upstream . '"';
+        return $lines;
+    }
+
+    private function isWebsocketProxyRequirement(array $requirement): bool
+    {
+        $type = strtolower((string) ($requirement['type'] ?? $requirement['kind'] ?? ''));
+        return $type === 'websocket_proxy';
+    }
+
+    private function isSafeApacheLocationPath(string $path): bool
+    {
+        return $path !== ''
+            && $path[0] === '/'
+            && strpos($path, '"') === false
+            && strpos($path, "\n") === false
+            && strpos($path, "\r") === false;
+    }
+
+    private function isSafeApacheProxyTarget(string $target): bool
+    {
+        if ($target === '' || strpos($target, '"') !== false || strpos($target, "\n") !== false || strpos($target, "\r") !== false) {
+            return false;
+        }
+        $parts = parse_url($target);
+        if (!is_array($parts)) {
+            return false;
+        }
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        return in_array($scheme, ['ws', 'wss', 'http', 'https'], true) && isset($parts['host']);
+    }
+
+    private function appWebServerRequirements(string $appId, array $app): array
+    {
+        $requirements = [];
+        foreach ([
+            $app['web_server']['requirements'] ?? null,
+            $app['config']['web_server']['requirements'] ?? null,
+            $this->releaseWebServerRequirements($app),
+            $this->installedWebServerRequirements($app),
+        ] as $source) {
+            if (!is_array($source)) {
+                continue;
+            }
+            foreach ($source as $requirement) {
+                if (is_array($requirement)) {
+                    $requirements[] = $this->normalizeWebServerRequirement($requirement, $app);
+                }
+            }
+        }
+
+        $byId = [];
+        $anonymous = [];
+        foreach ($requirements as $requirement) {
+            $id = (string) ($requirement['id'] ?? '');
+            if ($id !== '') {
+                $byId[$id] = $requirement;
+            } else {
+                $anonymous[] = $requirement;
+            }
+        }
+        return array_values(array_merge($byId, $anonymous));
+    }
+
+    private function normalizeWebServerRequirement(array $requirement, array $app): array
+    {
+        return $this->resolveAppPlaceholders($requirement, $app);
+    }
+
+    private function resolveAppPlaceholders($value, array $app)
+    {
+        if (is_array($value)) {
+            $resolved = [];
+            foreach ($value as $key => $item) {
+                $resolved[$key] = $this->resolveAppPlaceholders($item, $app);
+            }
+            return $resolved;
+        }
+        if (!is_string($value)) {
+            return $value;
+        }
+
+        $appConfig = is_array($app['config'] ?? null) ? $app['config'] : [];
+        $appUrl = (string) ($app['app_url'] ?? $appConfig['app_url'] ?? '');
+        $appHost = $appUrl !== '' ? (string) (parse_url($appUrl, PHP_URL_HOST) ?: '') : '';
+        return strtr($value, [
+            '{app.url}' => $appUrl,
+            '{app.app_url}' => $appUrl,
+            '{app.host}' => $appHost,
+            '{app.install_path}' => (string) ($app['install_path'] ?? $appConfig['install_path'] ?? ''),
+            '{app.public_path}' => (string) ($app['public_path'] ?? $appConfig['public_path'] ?? ''),
+        ]);
+    }
+
+    private function releaseWebServerRequirements(array $app): array
+    {
+        $release = is_array($app['release'] ?? null) ? $app['release'] : null;
+        if (!is_array($release)) {
+            $releasePath = (string) ($app['release_path'] ?? $app['config']['release_path'] ?? '');
+            if ($releasePath !== '') {
+                $release = $this->readOptionalJson($this->joinPath($releasePath, 'release.json'));
+            }
+        }
+        if (!is_array($release)) {
+            return [];
+        }
+
+        $requirements = $release['web_server']['requirements'] ?? $release['installer']['web_server']['requirements'] ?? null;
+        return is_array($requirements) ? $requirements : [];
+    }
+
+    private function installedWebServerRequirements(array $app): array
+    {
+        $requirements = [];
+        foreach (['install_manifest', 'install_report'] as $artifactKey) {
+            $artifact = $this->readAppArtifact($app, $artifactKey);
+            $json = is_array($artifact) && ($artifact['exists'] ?? false) === true && is_array($artifact['json'] ?? null)
+                ? $artifact['json']
+                : null;
+            if (!is_array($json)) {
+                continue;
+            }
+
+            foreach ([
+                $json['web_server']['requirements'] ?? null,
+                $json['web_server_requirements'] ?? null,
+            ] as $source) {
+                if (!is_array($source)) {
+                    continue;
+                }
+                foreach ($source as $requirement) {
+                    if (is_array($requirement)) {
+                        $requirements[] = $requirement;
+                    }
+                }
+            }
+        }
+        return $requirements;
     }
 
     private function apachePath(string $path): string
@@ -3026,7 +4764,7 @@ POWERSHELL
     private function printHelp(): void
     {
         $this->writeLine('PBB Kit Setup ' . self::VERSION);
-        $this->writeLine('Usage: php bin/kit-setup.php --config <path> [--action detect|hub-resolve|prepare-packages|dns-plan|dns-apply|dns-client-apply|dns-verify|ssl-plan|ssl-apply|remote-check|smoke-check|stage-report|finish-report|plan|preflight|install|populate] [--run-dir <path>] [--run-id <id>] [--app <app-id>]');
+        $this->writeLine('Usage: php bin/kit-setup.php --config <path> [--action detect|hub-resolve|prepare-packages|dns-plan|dns-apply|dns-client-apply|dns-verify|firewall-apply|service-plan|service-start|service-stop|service-verify|ssl-plan|ssl-apply|remote-check|smoke-check|stage-report|finish-report|plan|preflight|install|populate] [--run-dir <path>] [--run-id <id>] [--app <app-id>]');
     }
 
     private function validateKitConfig(array $config, string $configPath): void
@@ -3625,8 +5363,13 @@ POWERSHELL
         $checks = [];
         $errors = [];
         $warnings = [];
+        $appFilter = (string) ($context['app_filter'] ?? '');
+        $readinessOnly = (bool) ($config['data_prep']['readiness_check'] ?? false);
         foreach ($config['apps'] as $app) {
             if (!is_array($app) || ($app['enabled'] ?? true) === false) {
+                continue;
+            }
+            if ($appFilter !== '' && (string) ($app['id'] ?? '') !== $appFilter) {
                 continue;
             }
 
@@ -3636,6 +5379,35 @@ POWERSHELL
                 $errors[] = (string) ($check['message'] ?? ('Smoke check failed: ' . ($app['id'] ?? 'unknown')));
             } elseif (($check['status'] ?? '') === 'warning') {
                 $warnings[] = (string) ($check['message'] ?? ('Smoke check warning: ' . ($app['id'] ?? 'unknown')));
+            }
+
+            foreach ($this->appRuntimeServices((string) ($app['id'] ?? ''), $app, $config) as $service) {
+                if (($service['required_for_smoke'] ?? false) !== true) {
+                    continue;
+                }
+                $serviceCheck = $this->inspectRuntimeService($service);
+                $serviceCheck['check_type'] = 'runtime_service';
+                $checks[] = $serviceCheck;
+                if (($serviceCheck['status'] ?? '') === 'failed') {
+                    $errors[] = (string) ($serviceCheck['message'] ?? ('Runtime service smoke prerequisite failed: ' . ($service['id'] ?? 'unknown')));
+                } elseif (($serviceCheck['status'] ?? '') === 'warning') {
+                    $warnings[] = (string) ($serviceCheck['message'] ?? ('Runtime service smoke prerequisite warning: ' . ($service['id'] ?? 'unknown')));
+                }
+            }
+
+            if (!$readinessOnly) {
+                foreach ($this->appWebServerRequirements((string) ($app['id'] ?? ''), $app) as $requirement) {
+                    if (!$this->isWebsocketProxyRequirement($requirement)) {
+                        continue;
+                    }
+                    $websocketCheck = $this->inspectWebsocketSmokeRequirement($app, $requirement);
+                    $checks[] = $websocketCheck;
+                    if (($websocketCheck['status'] ?? '') === 'failed') {
+                        $errors[] = (string) ($websocketCheck['message'] ?? ('Websocket smoke check failed: ' . ($app['id'] ?? 'unknown')));
+                    } elseif (($websocketCheck['status'] ?? '') === 'warning') {
+                        $warnings[] = (string) ($websocketCheck['message'] ?? ('Websocket smoke check warning: ' . ($app['id'] ?? 'unknown')));
+                    }
+                }
             }
         }
 
@@ -3695,6 +5467,295 @@ POWERSHELL
             'http' => $http,
             'status' => $status,
             'message' => $message,
+        ];
+    }
+
+    private function inspectWebsocketSmokeRequirement(array $app, array $requirement): array
+    {
+        $appId = (string) ($app['id'] ?? 'unknown');
+        $requirementId = (string) ($requirement['id'] ?? 'websocket_proxy');
+        $url = $this->websocketSmokeUrl($app, $requirement);
+        $smokeTest = is_array($requirement['smoke_test'] ?? null) ? $requirement['smoke_test'] : [];
+        $timeoutSeconds = (float) ($smokeTest['timeout_seconds'] ?? $requirement['timeout_seconds'] ?? ($app['smoke']['timeout_seconds'] ?? 5));
+        $host = $this->hostFromUrlOrHost($url);
+        $dns = $this->inspectDnsHost($host);
+        $websocket = $this->inspectWebsocketEndpoint($url, $timeoutSeconds, $smokeTest);
+
+        $status = 'success';
+        $message = 'Websocket route is reachable.';
+        if ($url === '' || $host === '') {
+            $status = 'failed';
+            $message = 'Websocket requirement is missing a valid public websocket URL.';
+        } elseif (($dns['status'] ?? '') !== 'passed') {
+            $status = 'failed';
+            $message = 'Websocket host cannot be resolved: ' . $host;
+        } elseif (($websocket['status'] ?? '') !== 'passed') {
+            $status = 'failed';
+            $message = 'Websocket route is not reachable: ' . $url;
+        }
+
+        return [
+            'app_id' => $appId,
+            'check_type' => 'websocket',
+            'requirement_id' => $requirementId,
+            'install_scope' => (string) ($app['install_scope'] ?? 'local'),
+            'url' => $url,
+            'host' => $host,
+            'phase' => (string) ($requirement['smoke_test_phase'] ?? $smokeTest['phase'] ?? 'post-vhost'),
+            'install_blocking' => ($requirement['install_blocking'] ?? false) === true,
+            'smoke_test' => $smokeTest,
+            'dns' => $dns,
+            'websocket' => $websocket,
+            'status' => $status,
+            'message' => $message,
+        ];
+    }
+
+    private function websocketSmokeUrl(array $app, array $requirement): string
+    {
+        $explicit = (string) ($requirement['public_websocket_url'] ?? $requirement['websocket_url'] ?? '');
+        if ($explicit !== '') {
+            return $explicit;
+        }
+
+        $smokeTest = is_array($requirement['smoke_test'] ?? null) ? $requirement['smoke_test'] : [];
+        $path = (string) ($smokeTest['path'] ?? $requirement['server_path'] ?? $requirement['path_prefix'] ?? '/');
+        if ($path === '') {
+            $path = '/';
+        }
+        if ($path[0] !== '/') {
+            $path = '/' . $path;
+        }
+        $query = is_array($smokeTest['query'] ?? null) ? http_build_query($smokeTest['query']) : '';
+        if ($query !== '') {
+            $path .= (str_contains($path, '?') ? '&' : '?') . $query;
+        }
+
+        $base = (string) ($app['app_url'] ?? $app['config']['app_url'] ?? '');
+        if ($base === '') {
+            return '';
+        }
+
+        $parts = parse_url($base);
+        if (!is_array($parts) || !isset($parts['host'])) {
+            return '';
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? 'https')) === 'http' ? 'ws' : 'wss';
+        $port = isset($parts['port']) ? ':' . (int) $parts['port'] : '';
+        return $scheme . '://' . $parts['host'] . $port . $path;
+    }
+
+    private function inspectWebsocketEndpoint(string $url, float $timeoutSeconds, array $smokeTest = []): array
+    {
+        $result = [
+            'url' => $url,
+            'status' => 'failed',
+            'handshake_status' => null,
+            'expected_status' => (int) ($smokeTest['expect_status'] ?? 101),
+            'expected_first_message_type' => (string) ($smokeTest['expect_first_message_type'] ?? ''),
+            'phase' => 'parse',
+            'message' => '',
+        ];
+
+        $parts = parse_url($url);
+        if (!is_array($parts) || !isset($parts['host'])) {
+            $result['message'] = 'Invalid websocket URL.';
+            return $result;
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? 'ws'));
+        if (!in_array($scheme, ['ws', 'wss'], true)) {
+            $result['message'] = 'Unsupported websocket URL scheme.';
+            return $result;
+        }
+
+        $host = (string) $parts['host'];
+        $port = (int) ($parts['port'] ?? ($scheme === 'wss' ? 443 : 80));
+        $path = (string) ($parts['path'] ?? '/');
+        if ($path === '') {
+            $path = '/';
+        }
+        if (isset($parts['query'])) {
+            $path .= '?' . $parts['query'];
+        }
+
+        $target = ($scheme === 'wss' ? 'ssl://' : 'tcp://') . $host . ':' . $port;
+        $result['target'] = $target;
+        $result['request_path'] = $path;
+        $result['phase'] = $scheme === 'wss' ? 'tls_connect' : 'tcp_connect';
+        $errno = 0;
+        $errstr = '';
+        $timeout = max(1.0, $timeoutSeconds);
+        $context = stream_context_create(['ssl' => $this->tlsOptions()]);
+        $socket = @stream_socket_client($target, $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $context);
+        if (!is_resource($socket)) {
+            $result['connect_errno'] = $errno;
+            $result['connect_error'] = $errstr;
+            $result['message'] = trim($errstr) !== '' ? $errstr : 'Unable to connect to websocket endpoint.';
+            return $result;
+        }
+
+        stream_set_timeout($socket, (int) ceil($timeout));
+        $key = base64_encode(random_bytes(16));
+        $hostHeader = $host . ((isset($parts['port']) && !in_array($port, [80, 443], true)) ? ':' . $port : '');
+        $origin = ($scheme === 'wss' ? 'https://' : 'http://') . $hostHeader;
+        $headers = [
+            'Host' => $hostHeader,
+            'Upgrade' => 'websocket',
+            'Connection' => 'Upgrade',
+            'Sec-WebSocket-Key' => $key,
+            'Sec-WebSocket-Version' => '13',
+            'Origin' => $origin,
+        ];
+        if (is_array($smokeTest['headers'] ?? null)) {
+            foreach ($smokeTest['headers'] as $name => $value) {
+                $name = trim((string) $name);
+                if ($name !== '') {
+                    $headers[$name] = (string) $value;
+                }
+            }
+        }
+        $request = "GET {$path} HTTP/1.1\r\n"
+            . implode('', array_map(static fn($name, $value) => $name . ': ' . $value . "\r\n", array_keys($headers), $headers))
+            . "\r\n";
+        $result['phase'] = 'handshake';
+        $result['request_headers'] = $this->redactWebsocketSmokeHeaders($headers);
+        $result['origin'] = (string) ($headers['Origin'] ?? $origin);
+        fwrite($socket, $request);
+        $response = '';
+        while (!feof($socket) && strpos($response, "\r\n\r\n") === false && strlen($response) < 8192) {
+            $chunk = fgets($socket, 1024);
+            if ($chunk === false) {
+                break;
+            }
+            $response .= $chunk;
+        }
+
+        if (preg_match('/^HTTP\/\S+\s+(\d+)/', $response, $matches) === 1) {
+            $result['handshake_status'] = (int) $matches[1];
+        }
+        $result['response_preview'] = trim(substr(str_replace("\r", '', $response), 0, 700));
+        $expectedStatus = (int) ($smokeTest['expect_status'] ?? 101);
+        $result['status'] = ((int) ($result['handshake_status'] ?? 0)) === $expectedStatus ? 'passed' : 'failed';
+        $result['phase'] = $result['status'] === 'passed' ? 'post-handshake' : 'handshake';
+        $result['message'] = $result['status'] === 'passed'
+            ? 'Websocket handshake succeeded.'
+            : 'Websocket handshake did not return HTTP ' . $expectedStatus . '.';
+        if ($result['status'] === 'passed' && (string) ($smokeTest['expect_first_message_type'] ?? '') !== '') {
+            $messageCheck = $this->inspectWebsocketFirstMessage($socket, (string) $smokeTest['expect_first_message_type'], $timeout);
+            $result['first_message'] = $messageCheck;
+            $result['status'] = ($messageCheck['status'] ?? '') === 'passed' ? 'passed' : 'failed';
+            $result['phase'] = $result['status'] === 'passed' ? 'complete' : 'first-message';
+            $result['message'] = $result['status'] === 'passed'
+                ? 'Websocket handshake and first message check succeeded.'
+                : 'Websocket first message did not match expected type.';
+        } else {
+            $result['phase'] = $result['status'] === 'passed' ? 'complete' : 'handshake';
+        }
+        fclose($socket);
+        return $result;
+    }
+
+    private function redactWebsocketSmokeHeaders(array $headers): array
+    {
+        $redacted = [];
+        foreach ($headers as $name => $value) {
+            $key = (string) $name;
+            if (preg_match('/authorization|token|secret|key/i', $key) === 1 && !in_array(strtolower($key), ['sec-websocket-key'], true)) {
+                $redacted[$key] = '[redacted]';
+            } else {
+                $redacted[$key] = (string) $value;
+            }
+        }
+        if (isset($redacted['Sec-WebSocket-Key'])) {
+            $redacted['Sec-WebSocket-Key'] = '[generated]';
+        }
+        return $redacted;
+    }
+
+    private function inspectWebsocketFirstMessage($socket, string $expectedType, float $timeoutSeconds): array
+    {
+        $frame = $this->readWebsocketFrame($socket, $timeoutSeconds);
+        $result = [
+            'expected_type' => $expectedType,
+            'status' => 'failed',
+            'message' => 'No websocket message was received after handshake.',
+        ];
+        if (($frame['status'] ?? '') !== 'passed') {
+            return array_merge($result, $frame);
+        }
+        $payload = (string) ($frame['payload'] ?? '');
+        $decoded = json_decode($payload, true);
+        $type = is_array($decoded) ? (string) ($decoded['type'] ?? $decoded['event_type'] ?? $decoded['event'] ?? '') : '';
+        $result['payload_preview'] = substr($payload, 0, 700);
+        $result['type'] = $type;
+        $result['status'] = $type === $expectedType ? 'passed' : 'failed';
+        $result['message'] = $result['status'] === 'passed'
+            ? 'Expected websocket first message type was received.'
+            : 'Unexpected websocket first message type.';
+        return $result;
+    }
+
+    private function readWebsocketFrame($socket, float $timeoutSeconds): array
+    {
+        stream_set_timeout($socket, (int) ceil(max(1.0, $timeoutSeconds)));
+        $header = fread($socket, 2);
+        if ($header === false || strlen($header) < 2) {
+            return ['status' => 'failed', 'message' => 'Unable to read websocket frame header.'];
+        }
+        $bytes = array_values(unpack('C2', $header));
+        $opcode = $bytes[0] & 0x0f;
+        $masked = ($bytes[1] & 0x80) === 0x80;
+        $length = $bytes[1] & 0x7f;
+        if ($length === 126) {
+            $extended = fread($socket, 2);
+            if ($extended === false || strlen($extended) < 2) {
+                return ['status' => 'failed', 'message' => 'Unable to read websocket extended frame length.'];
+            }
+            $length = unpack('n', $extended)[1];
+        } elseif ($length === 127) {
+            $extended = fread($socket, 8);
+            if ($extended === false || strlen($extended) < 8) {
+                return ['status' => 'failed', 'message' => 'Unable to read websocket extended frame length.'];
+            }
+            $parts = unpack('N2', $extended);
+            $length = ($parts[1] * 4294967296) + $parts[2];
+            if ($length > 65536) {
+                return ['status' => 'failed', 'message' => 'Websocket first frame is too large for smoke diagnostics.'];
+            }
+        }
+        $mask = $masked ? fread($socket, 4) : '';
+        $payload = '';
+        while (strlen($payload) < $length) {
+            $chunk = fread($socket, min(8192, $length - strlen($payload)));
+            if ($chunk === false || $chunk === '') {
+                break;
+            }
+            $payload .= $chunk;
+        }
+        if (strlen($payload) < $length) {
+            return ['status' => 'failed', 'message' => 'Unable to read complete websocket first frame.'];
+        }
+        if ($masked && strlen($mask) === 4) {
+            $unmasked = '';
+            for ($i = 0; $i < strlen($payload); $i += 1) {
+                $unmasked .= $payload[$i] ^ $mask[$i % 4];
+            }
+            $payload = $unmasked;
+        }
+        if ($opcode !== 1) {
+            return [
+                'status' => 'failed',
+                'opcode' => $opcode,
+                'message' => 'Websocket first frame was not a text frame.',
+            ];
+        }
+        return [
+            'status' => 'passed',
+            'opcode' => $opcode,
+            'payload' => $payload,
+            'message' => 'Websocket first text frame was received.',
         ];
     }
 
@@ -4002,7 +6063,7 @@ POWERSHELL
         return $hub;
     }
 
-    private function discoverApps(array $config): array
+    private function discoverApps(array $config, bool $requireInstaller = true): array
     {
         $apps = [];
         foreach ($config['apps'] as $appConfig) {
@@ -4030,7 +6091,8 @@ POWERSHELL
 
             $releaseJsonPath = $this->joinPath($releasePath, 'release.json');
             $release = $this->readJsonFile($releaseJsonPath);
-            foreach (['app', 'version', 'installer'] as $field) {
+            $requiredFields = $requireInstaller ? ['app', 'version', 'installer'] : ['app', 'version'];
+            foreach ($requiredFields as $field) {
                 if (!array_key_exists($field, $release)) {
                     throw new RuntimeException("Release {$releaseJsonPath} is missing {$field}.");
                 }
@@ -4039,13 +6101,17 @@ POWERSHELL
                 throw new RuntimeException("Release app id mismatch for {$id}; release.json says {$release['app']}.");
             }
 
-            $unattended = (string) ($release['installer']['unattended'] ?? '');
-            if ($unattended === '') {
-                throw new RuntimeException("Release {$id} must declare installer.unattended.");
-            }
-            $unattendedPath = $this->joinPath($releasePath, $unattended);
-            if (!is_file($unattendedPath)) {
-                throw new RuntimeException("Release {$id} unattended installer does not exist: {$unattendedPath}");
+            $unattendedPath = null;
+            if ($requireInstaller) {
+                $unattended = (string) ($release['installer']['unattended'] ?? '');
+                if ($unattended === '') {
+                    throw new RuntimeException("Release {$id} must declare installer.unattended.");
+                }
+                $candidateUnattendedPath = $this->joinPath($releasePath, $unattended);
+                if (!is_file($candidateUnattendedPath)) {
+                    throw new RuntimeException("Release {$id} unattended installer does not exist: {$candidateUnattendedPath}");
+                }
+                $unattendedPath = $this->absolutePath($candidateUnattendedPath);
             }
 
             $status = (string) ($release['installer']['status'] ?? '');
@@ -4056,7 +6122,7 @@ POWERSHELL
                 'config' => $appConfig,
                 'release_path' => $this->absolutePath($releasePath),
                 'release' => $release,
-                'unattended_path' => $this->absolutePath($unattendedPath),
+                'unattended_path' => $unattendedPath,
                 'status_path' => $statusPath !== '' && is_file($statusPath) ? $this->absolutePath($statusPath) : null,
                 'depends_on' => array_values($appConfig['depends_on'] ?? []),
             ];
@@ -4113,11 +6179,11 @@ POWERSHELL
         return $filtered;
     }
 
-    private function planApp(array $app, array $kitConfig, string $runDir, string $runId): array
+    private function planApp(array $app, array $kitConfig, string $runDir, string $runId, ?string $modeOverride = null, bool $includeChecksum = true): array
     {
         $appConfigPath = $this->joinPath($runDir, 'apps' . DIRECTORY_SEPARATOR . $app['id'] . '.config.json');
         $appReportPath = $this->joinPath($runDir, 'apps' . DIRECTORY_SEPARATOR . $app['id'] . '.report.json');
-        $generatedConfig = $this->buildAppConfig($app, $kitConfig, $runId);
+        $generatedConfig = $this->buildAppConfig($app, $kitConfig, $runId, $modeOverride);
         $this->writeJsonFile($appConfigPath, $generatedConfig);
 
         return [
@@ -4130,14 +6196,17 @@ POWERSHELL
             'config_path' => $this->absolutePath($appConfigPath),
             'report_path' => $this->absolutePath($appReportPath),
             'depends_on' => $app['depends_on'],
-            'checksum' => $this->verifyChecksums($app),
+            'checksum' => $includeChecksum ? $this->verifyChecksums($app) : [
+                'status' => 'skipped',
+                'message' => 'Checksum verification is skipped for post-install Data Prep.',
+            ],
+            'runtime_services' => $this->appRuntimeServices((string) $app['id'], $app, $kitConfig),
         ];
     }
 
-    private function provisionAppDatabases(array $orderedApps, array $kitConfig): array
+    private function provisionAppDatabases(array $orderedApps, array $kitConfig, string $action): array
     {
-        $results = [];
-        $seen = [];
+        $databases = [];
         $failed = false;
 
         foreach ($orderedApps as $app) {
@@ -4151,11 +6220,29 @@ POWERSHELL
             if (!in_array($driver, ['mysql', 'mariadb'], true) || $name === '') {
                 continue;
             }
-            if (isset($seen[$name])) {
-                continue;
+            if (!isset($databases[$name])) {
+                $databases[$name] = [
+                    'database' => $database,
+                    'app_ids' => [],
+                    'reset' => false,
+                ];
             }
-            $seen[$name] = true;
-            $result = $this->provisionMysqlDatabase($database, (string) ($app['id'] ?? 'app'));
+            $appId = (string) ($app['id'] ?? 'app');
+            $databases[$name]['app_ids'][] = $appId;
+            if ($action === 'install' && $this->resolveAppInstallerMode($app, $action) === 'fresh') {
+                $databases[$name]['reset'] = true;
+            }
+        }
+
+        $results = [];
+        foreach ($databases as $databasePlan) {
+            $appIds = array_values(array_unique($databasePlan['app_ids']));
+            $result = $this->provisionMysqlDatabase(
+                $databasePlan['database'],
+                implode(',', $appIds),
+                (bool) $databasePlan['reset']
+            );
+            $result['app_ids'] = $appIds;
             $results[] = $result;
             if (($result['status'] ?? '') !== 'success') {
                 $failed = true;
@@ -4164,12 +6251,12 @@ POWERSHELL
 
         return [
             'status' => $failed ? 'failed' : 'success',
-            'mode' => 'create-if-missing',
+            'mode' => $action === 'install' ? 'fresh-reset-or-create' : 'create-if-missing',
             'databases' => $results,
         ];
     }
 
-    private function provisionMysqlDatabase(array $database, string $appId): array
+    private function provisionMysqlDatabase(array $database, string $appId, bool $reset): array
     {
         $name = (string) ($database['database'] ?? '');
         $host = (string) ($database['host'] ?? '127.0.0.1');
@@ -4186,6 +6273,8 @@ POWERSHELL
             'username' => $username,
             'status' => 'failed',
             'message' => '',
+            'reset' => $reset,
+            'reset_mode' => $reset ? 'drop-and-create' : 'none',
         ];
 
         if ($username === '') {
@@ -4203,14 +6292,44 @@ POWERSHELL
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             ]);
+            $existsBefore = $this->mysqlDatabaseExists($pdo, $name);
+            $result['existed_before'] = $existsBefore;
+            if ($existsBefore) {
+                $result['tables_before'] = $this->mysqlDatabaseTableCount($pdo, $name);
+            }
+            if ($reset && $existsBefore) {
+                $pdo->exec(sprintf('DROP DATABASE `%s`', str_replace('`', '``', $name)));
+                $result['reset_performed'] = true;
+            } else {
+                $result['reset_performed'] = false;
+            }
             $pdo->exec(sprintf('CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci', str_replace('`', '``', $name)));
+            $result['tables_after'] = $this->mysqlDatabaseTableCount($pdo, $name);
             $result['status'] = 'success';
-            $result['message'] = 'Database is ready.';
+            $result['message'] = ($result['reset_performed'] ?? false)
+                ? 'Fresh database was reset and recreated.'
+                : 'Database is ready.';
         } catch (Throwable $e) {
             $result['message'] = $e->getMessage();
         }
 
         return $result;
+    }
+
+    private function mysqlDatabaseExists(PDO $pdo, string $database): bool
+    {
+        $statement = $pdo->prepare('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?');
+        $statement->execute([$database]);
+
+        return $statement->fetchColumn() !== false;
+    }
+
+    private function mysqlDatabaseTableCount(PDO $pdo, string $database): int
+    {
+        $statement = $pdo->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ?');
+        $statement->execute([$database]);
+
+        return (int) $statement->fetchColumn();
     }
 
     private function isSafeMysqlIdentifier(string $value): bool
@@ -4220,9 +6339,9 @@ POWERSHELL
 
     private function runAppInstaller(array $app, array $kitConfig, string $runDir, string $runId, string $action): array
     {
-        $plan = $this->planApp($app, $kitConfig, $runDir, $runId);
         $phpBinary = (string) $kitConfig['runtime']['php_binary'];
-        $mode = $action === 'preflight' ? 'preflight' : (string) ($app['config']['mode'] ?? 'fresh');
+        $mode = $this->resolveAppInstallerMode($app, $action);
+        $plan = $this->planApp($app, $kitConfig, $runDir, $runId, $mode);
 
         $command = [
             $phpBinary,
@@ -4235,7 +6354,7 @@ POWERSHELL
             $plan['report_path'],
         ];
 
-        $process = $this->runProcess($command, $app['release_path']);
+        $process = $this->runProcess($command, $app['release_path'], $this->buildAppInstallerEnvironment($kitConfig));
         $appReport = is_file($plan['report_path'])
             ? $this->readJsonFile($plan['report_path'])
             : null;
@@ -4259,7 +6378,115 @@ POWERSHELL
             'status_command' => $statusResult,
             'manifest' => $manifest,
             'services' => is_array($appReport) ? ($appReport['services'] ?? []) : [],
+            'runtime_services' => is_array($appReport) && is_array($appReport['runtime_services'] ?? null)
+                ? $appReport['runtime_services']
+                : $this->appRuntimeServices((string) $app['id'], $app, $kitConfig),
         ]);
+    }
+
+    private function cleanupAppInstallerArtifacts(array $app): array
+    {
+        $releasePath = (string) ($app['release_path'] ?? '');
+        $releaseReal = realpath($releasePath);
+        $removed = [];
+        $skipped = [];
+        $warnings = [];
+
+        if ($releaseReal === false || !is_dir($releaseReal)) {
+            return [
+                'status' => 'warning',
+                'removed' => [],
+                'skipped' => [],
+                'warnings' => ['App release path was not available for installer cleanup.'],
+            ];
+        }
+
+        $targets = [
+            $this->joinPath($releaseReal, 'installer'),
+            $this->joinPath($releaseReal, 'public' . DIRECTORY_SEPARATOR . 'installer'),
+        ];
+
+        $installer = is_array($app['release']['installer'] ?? null) ? $app['release']['installer'] : [];
+        foreach (['interactive', 'unattended', 'status', 'schema'] as $key) {
+            $relative = (string) ($installer[$key] ?? '');
+            if ($relative === '') {
+                continue;
+            }
+            if (strpos(str_replace('\\', '/', $relative), 'storage/') === 0) {
+                $skipped[] = [
+                    'path' => $relative,
+                    'reason' => 'storage installer reports/manifests are retained for support diagnostics',
+                ];
+                continue;
+            }
+            if (strpos(strtolower(str_replace('\\', '/', $relative)), 'installer') !== false) {
+                $targets[] = $this->joinPath($releaseReal, $relative);
+            }
+        }
+
+        $targets = array_values(array_unique($targets));
+        usort($targets, static fn (string $left, string $right): int => strlen($right) <=> strlen($left));
+
+        foreach ($targets as $target) {
+            $real = realpath($target);
+            if ($real === false) {
+                continue;
+            }
+            if (!$this->isPathInside($real, $releaseReal)) {
+                $skipped[] = [
+                    'path' => $target,
+                    'reason' => 'path is outside the app release boundary',
+                ];
+                continue;
+            }
+            if (strpos(strtolower(str_replace('\\', '/', $this->relativePath($releaseReal, $real))), 'storage/') === 0) {
+                $skipped[] = [
+                    'path' => $real,
+                    'reason' => 'storage installer reports/manifests are retained for support diagnostics',
+                ];
+                continue;
+            }
+
+            try {
+                if (is_dir($real)) {
+                    $this->removeDirectory($real);
+                    $removed[] = ['path' => $real, 'type' => 'directory'];
+                } elseif (is_file($real)) {
+                    if (!unlink($real)) {
+                        throw new RuntimeException('Unable to remove file: ' . $real);
+                    }
+                    $removed[] = ['path' => $real, 'type' => 'file'];
+                }
+            } catch (Throwable $e) {
+                $warnings[] = $e->getMessage();
+            }
+        }
+
+        return [
+            'status' => count($warnings) > 0 ? 'warning' : 'success',
+            'removed' => $removed,
+            'skipped' => $skipped,
+            'warnings' => $warnings,
+        ];
+    }
+
+    private function resolveAppInstallerMode(array $app, string $action): string
+    {
+        if ($action === 'preflight') {
+            return 'preflight';
+        }
+
+        $configuredMode = (string) ($app['config']['mode'] ?? 'fresh');
+        if ($action !== 'install' || $configuredMode !== 'repair') {
+            return $configuredMode;
+        }
+
+        $manifest = $this->readAppArtifact($app, 'install_manifest');
+        if (is_array($manifest) && ($manifest['exists'] ?? false) === true) {
+            return 'repair';
+        }
+
+        return 'fresh';
     }
 
     private function summarizeAppReport(array $appReport): array
@@ -4298,6 +6525,10 @@ POWERSHELL
 
     private function runAppPopulationTools(array $app, array $kitConfig, string $runDir, string $runId): array
     {
+        if (isset($app['release']['data_prep']) && is_array($app['release']['data_prep'])) {
+            return $this->runAppDataPrepTools($app, $kitConfig, $runDir, $runId);
+        }
+
         $plan = $this->planApp($app, $kitConfig, $runDir, $runId);
         $tools = $this->normalizeInstallerTools($app['release']['installer']['tools'] ?? []);
         $enabledTools = [];
@@ -4345,6 +6576,683 @@ POWERSHELL
         ]);
     }
 
+    private function runAppDataPrepTools(array $app, array $kitConfig, string $runDir, string $runId): array
+    {
+        $plan = $this->planApp($app, $kitConfig, $runDir, $runId, 'initial', false);
+        $dataPrep = $app['release']['data_prep'];
+        $tools = is_array($dataPrep['tools'] ?? null) ? $dataPrep['tools'] : [];
+        $capabilities = is_array($dataPrep['capabilities'] ?? null) ? $dataPrep['capabilities'] : [];
+        $orderedSteps = [
+            'prepare_data' => 'Prepare Data',
+            'apply_settings' => 'Apply Settings',
+            'verify' => 'Verify',
+        ];
+        $selectedStep = (string) ($kitConfig['data_prep']['step'] ?? '');
+        if ($selectedStep !== '') {
+            if (!array_key_exists($selectedStep, $orderedSteps)) {
+                throw new RuntimeException('Unsupported Data Prep step: ' . $selectedStep);
+            }
+            $orderedSteps = [$selectedStep => $orderedSteps[$selectedStep]];
+        }
+
+        $config = $this->readJsonFile($plan['config_path']);
+        $config = $this->prepareDataPrepAppConfig($config, $app, $kitConfig, $tools);
+        $this->writeJsonFile($plan['config_path'], $config);
+
+        $stepResults = [];
+        $blockedBy = null;
+        foreach ($orderedSteps as $step => $label) {
+            $enabled = (bool) ($capabilities[$step] ?? isset($tools[$step]));
+            if (!$enabled) {
+                $stepResults[] = [
+                    'name' => $step,
+                    'step' => $step,
+                    'label' => $label,
+                    'status' => 'skipped',
+                    'message' => $label . ' is not required for this app.',
+                ];
+                continue;
+            }
+
+            if ($blockedBy !== null) {
+                $stepResults[] = [
+                    'name' => $step,
+                    'step' => $step,
+                    'label' => $label,
+                    'status' => 'blocked',
+                    'message' => $label . ' was blocked by failed ' . $blockedBy . '.',
+                ];
+                continue;
+            }
+
+            if (!isset($tools[$step]) || !is_array($tools[$step])) {
+                $stepResults[] = [
+                    'name' => $step,
+                    'step' => $step,
+                    'label' => $label,
+                    'status' => 'failed',
+                    'message' => $label . ' is enabled but no tool is declared.',
+                ];
+                $blockedBy = $label;
+                continue;
+            }
+
+            $stepResult = $this->runDataPrepTool(
+                $app,
+                $kitConfig,
+                $runDir,
+                (string) $step,
+                $label,
+                $tools[$step],
+                $plan['config_path'],
+                $config
+            );
+            $stepResults[] = $stepResult;
+            if (($stepResult['status'] ?? '') === 'failed') {
+                $blockedBy = $label;
+            }
+        }
+
+        $statuses = array_map(static fn (array $result): string => (string) ($result['status'] ?? 'pending'), $stepResults);
+        $failed = in_array('failed', $statuses, true);
+        $success = in_array('success', $statuses, true);
+        $status = $failed ? 'failed' : ($success ? 'success' : 'skipped');
+
+        return array_merge($plan, [
+            'status' => $status,
+            'mode' => 'populate',
+            'data_prep' => [
+                'version' => $dataPrep['version'] ?? 1,
+                'capabilities' => $capabilities,
+                'steps' => $stepResults,
+            ],
+            'population_tools' => $stepResults,
+            'message' => $status === 'skipped'
+                ? 'No Data Prep tools are required for this app.'
+                : ($status === 'failed' ? 'One or more Data Prep tools failed.' : 'Data Prep tools completed.'),
+        ]);
+    }
+
+    private function runDataPrepPostApplyVerification(array $orderedApps, array $kitConfig, string $runDir, string $runId, array $context): array
+    {
+        $warnings = [];
+        $errors = [];
+        $serviceRestart = $this->restartDataPrepHeartbeatServices($orderedApps, $kitConfig, $runDir);
+        foreach (($serviceRestart['warnings'] ?? []) as $warning) {
+            $warnings[] = (string) $warning;
+        }
+        foreach (($serviceRestart['errors'] ?? []) as $error) {
+            $errors[] = (string) $error;
+        }
+
+        $heartbeatVerify = $this->runMaestroHeartbeatDataPrepVerify($orderedApps, $kitConfig, $runDir, $runId, $context);
+        foreach (($heartbeatVerify['warnings'] ?? []) as $warning) {
+            $warnings[] = (string) $warning;
+        }
+        foreach (($heartbeatVerify['errors'] ?? []) as $error) {
+            $errors[] = (string) $error;
+        }
+
+        return [
+            'schema_version' => 1,
+            'kit_setup_version' => self::VERSION,
+            'action' => 'data-prep-post-apply',
+            'status' => count($errors) > 0 ? 'failed' : (count($warnings) > 0 ? 'warning' : 'success'),
+            'started_at' => $context['started_at'] ?? null,
+            'finished_at' => date(DATE_ATOM),
+            'service_restart' => $serviceRestart,
+            'heartbeat_verify' => $heartbeatVerify,
+            'warnings' => $warnings,
+            'errors' => $errors,
+        ];
+    }
+
+    private function restartDataPrepHeartbeatServices(array $orderedApps, array $kitConfig, string $runDir): array
+    {
+        $targetServiceIds = [
+            'pbb-relay-worker' => true,
+            'pbb-realtime-websocket' => true,
+            'pbb-realtime-media-dispatcher' => true,
+        ];
+        $services = [];
+        foreach ($orderedApps as $app) {
+            $appId = (string) ($app['id'] ?? '');
+            if (!in_array($appId, ['pbb-relay', 'pbb-realtime'], true)) {
+                continue;
+            }
+            foreach ($this->appRuntimeServices($appId, $app, $kitConfig) as $service) {
+                $serviceId = (string) ($service['id'] ?? '');
+                if (isset($targetServiceIds[$serviceId])) {
+                    $services[$serviceId] = $service;
+                }
+            }
+        }
+
+        $serviceRunDir = $this->joinPath($runDir, 'runtime-services');
+        $this->ensureDirectory($serviceRunDir);
+        $results = [];
+        $warnings = [];
+        $errors = [];
+        foreach ($services as $service) {
+            $stop = $this->stopWinSwService($service, 'Data Prep Apply Settings completed; restart for Maestro heartbeat verification');
+            $start = $this->startRuntimeService($service, $serviceRunDir);
+            $result = [
+                'app_id' => $service['app_id'] ?? null,
+                'id' => $service['id'] ?? null,
+                'name' => $service['name'] ?? null,
+                'stop' => $stop,
+                'start' => $start,
+                'status' => ($start['status'] ?? '') === 'success' ? 'success' : (($start['status'] ?? '') === 'warning' ? 'warning' : 'failed'),
+                'message' => (string) ($start['message'] ?? 'Runtime service restart completed.'),
+            ];
+            $results[] = $result;
+            if (($result['status'] ?? '') === 'failed') {
+                $errors[] = 'Data Prep service restart failed for ' . (string) ($service['id'] ?? 'runtime-service') . ': ' . (string) ($result['message'] ?? 'unknown');
+            } elseif (($result['status'] ?? '') === 'warning') {
+                $warnings[] = 'Data Prep service restart warning for ' . (string) ($service['id'] ?? 'runtime-service') . ': ' . (string) ($result['message'] ?? 'unknown');
+            }
+        }
+
+        return [
+            'status' => count($errors) > 0 ? 'failed' : (count($warnings) > 0 ? 'warning' : 'success'),
+            'reason' => 'Refresh Maestro heartbeat emitters after Data Prep Apply Settings.',
+            'runtime_services' => $results,
+            'warnings' => $warnings,
+            'errors' => $errors,
+        ];
+    }
+
+    private function runMaestroHeartbeatDataPrepVerify(array $orderedApps, array $kitConfig, string $runDir, string $runId, array $context): array
+    {
+        $maestro = null;
+        foreach ($orderedApps as $app) {
+            if ((string) ($app['id'] ?? '') === 'pbb-maestro') {
+                $maestro = $app;
+                break;
+            }
+        }
+        if (!is_array($maestro) || !isset($maestro['release']['data_prep']) || !is_array($maestro['release']['data_prep'])) {
+            return [
+                'status' => 'skipped',
+                'message' => 'Maestro Data Prep verify tool is not available.',
+                'warnings' => [],
+                'errors' => [],
+            ];
+        }
+
+        $verifyConfig = $kitConfig;
+        if (!isset($verifyConfig['data_prep']) || !is_array($verifyConfig['data_prep'])) {
+            $verifyConfig['data_prep'] = [];
+        }
+        $verifyConfig['data_prep']['step'] = 'verify';
+        $verifyConfig['data_prep']['require_fresh_heartbeat'] = true;
+        if (!isset($verifyConfig['data_prep']['freshness_threshold_seconds'])) {
+            $verifyConfig['data_prep']['freshness_threshold_seconds'] = 60;
+        }
+
+        $timeoutSeconds = max(30, (int) ($verifyConfig['data_prep']['heartbeat_verify_timeout_seconds'] ?? 75));
+        $intervalSeconds = max(2, (int) ($verifyConfig['data_prep']['heartbeat_verify_interval_seconds'] ?? 5));
+        $deadline = time() + $timeoutSeconds;
+        $attempts = [];
+        $last = null;
+        $attempt = 0;
+        do {
+            $attempt++;
+            $last = $this->runAppDataPrepTools($maestro, $verifyConfig, $runDir, $runId);
+            $attempts[] = [
+                'attempt' => $attempt,
+                'status' => $last['status'] ?? 'unknown',
+                'message' => $last['message'] ?? '',
+                'finished_at' => date(DATE_ATOM),
+                'steps' => $last['data_prep']['steps'] ?? [],
+            ];
+            if (($last['status'] ?? '') === 'success') {
+                break;
+            }
+            if (time() >= $deadline) {
+                break;
+            }
+            sleep(min($intervalSeconds, max(1, $deadline - time())));
+        } while (true);
+
+        $status = (string) ($last['status'] ?? 'failed');
+        $warnings = [];
+        $errors = [];
+        if ($status !== 'success') {
+            $errors[] = 'Maestro heartbeat verification did not receive fresh Relay/Realtime heartbeats within ' . $timeoutSeconds . ' seconds.';
+        }
+
+        return [
+            'status' => $status === 'success' ? 'success' : 'failed',
+            'message' => $status === 'success'
+                ? 'Maestro received fresh Relay/Realtime heartbeats.'
+                : 'Maestro heartbeat verification failed.',
+            'timeout_seconds' => $timeoutSeconds,
+            'interval_seconds' => $intervalSeconds,
+            'attempt_count' => count($attempts),
+            'attempts' => $attempts,
+            'final_result' => $last,
+            'warnings' => $warnings,
+            'errors' => $errors,
+        ];
+    }
+
+    private function prepareDataPrepAppConfig(array $config, array $app, array $kitConfig, array $tools): array
+    {
+        $apply = (bool) ($kitConfig['data_prep']['apply'] ?? ($config['data_prep']['apply'] ?? false));
+        if (!isset($config['data_prep']) || !is_array($config['data_prep'])) {
+            $config['data_prep'] = [];
+        }
+        $config['data_prep']['apply'] = $apply;
+        foreach ($tools as $tool) {
+            if (!is_array($tool)) {
+                continue;
+            }
+            $sectionPath = (string) ($tool['config_section'] ?? '');
+            if ($sectionPath === '') {
+                continue;
+            }
+            $section = $this->getNestedValue($config, $sectionPath);
+            if (!is_array($section)) {
+                $section = [];
+            }
+            $section['enabled'] = true;
+            $section['dry_run'] = !$apply;
+            if (isset($section['options']) && is_array($section['options'])) {
+                $section['options']['dry_run'] = !$apply;
+            }
+            $this->setNestedValue($config, $sectionPath, $section);
+        }
+
+        $shortId = preg_replace('/^pbb[-_]/', '', strtolower((string) ($app['id'] ?? '')));
+        if (isset($config[$shortId]['populate']) && is_array($config[$shortId]['populate'])) {
+            $config[$shortId]['populate']['enabled'] = true;
+            $config[$shortId]['populate']['dry_run'] = !$apply;
+            if (isset($config[$shortId]['populate']['options']) && is_array($config[$shortId]['populate']['options'])) {
+                $config[$shortId]['populate']['options']['dry_run'] = !$apply;
+            }
+        }
+
+        $secrets = is_array($kitConfig['shared']['secrets']['values'] ?? null) ? $kitConfig['shared']['secrets']['values'] : [];
+        $relayTelemetryToken = (string) ($secrets['maestro_relay_telemetry_token'] ?? $secrets['maestro_telemetry_token'] ?? '');
+        $realtimeTelemetryToken = (string) ($secrets['maestro_realtime_telemetry_token'] ?? $secrets['maestro_telemetry_token'] ?? '');
+
+        if (($app['id'] ?? '') === 'pbb-maestro') {
+            if (!isset($config['maestro']['populate']) || !is_array($config['maestro']['populate'])) {
+                $config['maestro']['populate'] = [];
+            }
+            $config['maestro']['populate']['enabled'] = true;
+            $config['maestro']['populate']['applications'] = $this->maestroDataPrepApplications($kitConfig, $config);
+            $config['maestro']['populate']['generated_telemetry_tokens'] = [
+                'relay' => [
+                    [
+                        'label' => 'Primary',
+                        'plain_text_token' => $relayTelemetryToken,
+                    ],
+                ],
+                'realtime' => [
+                    [
+                        'label' => 'Primary',
+                        'plain_text_token' => $realtimeTelemetryToken,
+                    ],
+                ],
+            ];
+            if (!isset($config['maestro']['data_prep']['verify']) || !is_array($config['maestro']['data_prep']['verify'])) {
+                $config['maestro']['data_prep']['verify'] = [];
+            }
+            $config['maestro']['data_prep']['verify']['enabled'] = true;
+            $config['maestro']['data_prep']['verify']['require_fresh_heartbeat'] = (bool) ($kitConfig['data_prep']['require_fresh_heartbeat'] ?? false);
+            $config['maestro']['data_prep']['verify']['freshness_threshold_seconds'] = max(1, (int) ($kitConfig['data_prep']['freshness_threshold_seconds'] ?? 60));
+        }
+
+        if (($app['id'] ?? '') === 'pbb-mapserver') {
+            $config = $this->prepareMapServerDataPrepConfig($config, $app, $kitConfig, $apply);
+        }
+
+        if (($app['id'] ?? '') === 'pbb-relay') {
+            if (!isset($config['relay']['data_prep']['apply_settings']) || !is_array($config['relay']['data_prep']['apply_settings'])) {
+                $config['relay']['data_prep']['apply_settings'] = [];
+            }
+            $config['relay']['data_prep']['apply_settings']['enabled'] = true;
+            $config['relay']['data_prep']['apply_settings']['maestro'] = [
+                'base_url' => $this->appBaseUrlForDataPrep($kitConfig, $config, 'pbb-maestro', 'maestro', 'https://maestro.pbb.ph'),
+                'app_code' => 'relay',
+                'telemetry_token' => $relayTelemetryToken,
+                'tls_verify' => true,
+            ];
+            $caFile = $this->bundledCaFile();
+            if ($caFile !== '') {
+                $config['relay']['data_prep']['apply_settings']['maestro']['ca_bundle'] = $caFile;
+                $config['relay']['data_prep']['apply_settings']['maestro']['curl_ca_bundle'] = $caFile;
+            }
+        }
+
+        if (($app['id'] ?? '') === 'pbb-realtime') {
+            $config = $this->prepareRealtimeHotlineClientSecretConfig($config, $secrets);
+
+            if (!isset($config['realtime']['data_prep']['apply_settings']) || !is_array($config['realtime']['data_prep']['apply_settings'])) {
+                $config['realtime']['data_prep']['apply_settings'] = [];
+            }
+            $maestroTelemetrySettings = [
+                'enabled' => true,
+                'base_url' => $this->appBaseUrlForDataPrep($kitConfig, $config, 'pbb-maestro', 'maestro', 'https://maestro.pbb.ph'),
+                'app_code' => 'realtime',
+                'telemetry_token' => $realtimeTelemetryToken,
+                'tls_verify' => true,
+            ];
+            $caFile = $this->bundledCaFile();
+            if ($caFile !== '') {
+                $maestroTelemetrySettings['ca_bundle'] = $caFile;
+                $maestroTelemetrySettings['curl_ca_bundle'] = $caFile;
+            }
+            $config['realtime']['data_prep']['apply_settings']['enabled'] = true;
+            $config['realtime']['data_prep']['apply_settings']['maestro'] = $maestroTelemetrySettings;
+
+            if (!isset($config['realtime']['data_prep']['verify']) || !is_array($config['realtime']['data_prep']['verify'])) {
+                $config['realtime']['data_prep']['verify'] = [];
+            }
+            $config['realtime']['data_prep']['verify']['enabled'] = true;
+            $config['realtime']['data_prep']['verify']['maestro'] = $maestroTelemetrySettings;
+        }
+
+        if (($app['id'] ?? '') === 'pbb-hotline') {
+            $realtimeSettings = $this->hotlineRealtimeDataPrepSettings($kitConfig, $config, $secrets);
+            if (!isset($config['hotline']['data_prep']['apply_settings']) || !is_array($config['hotline']['data_prep']['apply_settings'])) {
+                $config['hotline']['data_prep']['apply_settings'] = [];
+            }
+            $config['hotline']['data_prep']['apply_settings'] = array_replace(
+                $config['hotline']['data_prep']['apply_settings'],
+                $realtimeSettings,
+                [
+                    'enabled' => true,
+                    'dry_run' => !$apply,
+                    'realtime' => $realtimeSettings,
+                ]
+            );
+
+            if (!isset($config['hotline']['data_prep']['verify']) || !is_array($config['hotline']['data_prep']['verify'])) {
+                $config['hotline']['data_prep']['verify'] = [];
+            }
+            $config['hotline']['data_prep']['verify']['enabled'] = true;
+            $config['hotline']['data_prep']['verify']['dry_run'] = !$apply;
+            $config['hotline']['data_prep']['verify']['require_realtime_settings'] = true;
+        }
+
+        return $config;
+    }
+
+    private function prepareRealtimeHotlineClientSecretConfig(array $config, array $secrets): array
+    {
+        $backendSecret = trim((string) ($secrets['realtime_backend_ingress_secret'] ?? ''));
+        if ($backendSecret === '') {
+            return $config;
+        }
+
+        if (!isset($config['realtime']) || !is_array($config['realtime'])) {
+            $config['realtime'] = [];
+        }
+        if (!isset($config['realtime']['populate']) || !is_array($config['realtime']['populate'])) {
+            $config['realtime']['populate'] = [];
+        }
+        if (!isset($config['realtime']['populate']['source']) || trim((string) $config['realtime']['populate']['source']) === '') {
+            $config['realtime']['populate']['source'] = 'resources/data/realtime/hotline-client-data.json';
+        }
+        if (!isset($config['realtime']['populate']['clients']) || !is_array($config['realtime']['populate']['clients'])) {
+            $config['realtime']['populate']['clients'] = [];
+        }
+
+        $config['realtime']['populate']['clients'][] = [
+            'client_code' => 'clt_PBB_HOTLINE',
+            'name' => 'PBB Hotline',
+            'backend_ingress_secret' => $backendSecret,
+        ];
+
+        if (!isset($config['realtime']['populate']['options']) || !is_array($config['realtime']['populate']['options'])) {
+            $config['realtime']['populate']['options'] = [];
+        }
+        if (!array_key_exists('overwrite_secrets', $config['realtime']['populate']['options'])) {
+            $config['realtime']['populate']['options']['overwrite_secrets'] = false;
+        }
+
+        return $config;
+    }
+
+    private function hotlineRealtimeDataPrepSettings(array $kitConfig, array $config, array $secrets): array
+    {
+        return [
+            'base_url' => $this->appBaseUrlForDataPrep($kitConfig, $config, 'pbb-realtime', 'realtime', 'https://realtime.pbb.ph'),
+            'client_code' => 'clt_PBB_HOTLINE',
+            'project_code_server' => 'prj_HOTLINE_SERVER',
+            'project_code_caller' => 'prj_HOTLINE_CITIZEN',
+            'project_code_citizen' => 'prj_HOTLINE_CITIZEN',
+            'project_code_operator' => 'prj_HOTLINE_OPERATOR',
+            'project_code_command' => 'prj_HOTLINE_COMMAND',
+            'project_code_media_ingest' => 'prj_HOTLINE_OPERATOR',
+            'project_codes' => [
+                'server' => 'prj_HOTLINE_SERVER',
+                'caller' => 'prj_HOTLINE_CITIZEN',
+                'citizen' => 'prj_HOTLINE_CITIZEN',
+                'operator' => 'prj_HOTLINE_OPERATOR',
+                'command' => 'prj_HOTLINE_COMMAND',
+                'media_ingest' => 'prj_HOTLINE_OPERATOR',
+            ],
+            'backend_ingress_secret' => (string) ($secrets['realtime_backend_ingress_secret'] ?? ''),
+            'media_ingest_secret' => (string) ($secrets['realtime_media_ingest_secret'] ?? ''),
+            'token_signing_secret' => (string) ($secrets['realtime_token_secret'] ?? ''),
+        ];
+    }
+
+    private function maestroDataPrepApplications(array $kitConfig, array $config): array
+    {
+        return [
+            [
+                'app_code' => 'relay',
+                'display_name' => 'PBB Relay',
+                'environment' => 'production',
+                'base_url' => $this->appBaseUrlForDataPrep($kitConfig, $config, 'pbb-relay', 'relay', 'https://relay.pbb.ph'),
+                'is_active' => true,
+            ],
+            [
+                'app_code' => 'realtime',
+                'display_name' => 'PBB Realtime',
+                'environment' => 'production',
+                'base_url' => $this->appBaseUrlForDataPrep($kitConfig, $config, 'pbb-realtime', 'realtime', 'https://realtime.pbb.ph'),
+                'is_active' => true,
+            ],
+        ];
+    }
+
+    private function appBaseUrlForDataPrep(array $kitConfig, array $config, string $appId, string $dependencyKey, string $fallback): string
+    {
+        foreach (($kitConfig['apps'] ?? []) as $appConfig) {
+            if (!is_array($appConfig) || (string) ($appConfig['id'] ?? '') !== $appId) {
+                continue;
+            }
+            $url = trim((string) ($appConfig['app_url'] ?? ''));
+            if ($url !== '') {
+                return $url;
+            }
+        }
+
+        $url = trim((string) ($config['dependencies'][$dependencyKey]['base_url'] ?? $kitConfig['shared']['dependencies'][$dependencyKey]['base_url'] ?? ''));
+        return $url !== '' ? $url : $fallback;
+    }
+
+    private function prepareMapServerDataPrepConfig(array $config, array $app, array $kitConfig, bool $apply): array
+    {
+        $prepare = $this->getNestedValue($config, 'mapserver.data_prep.prepare');
+        if (!is_array($prepare)) {
+            $prepare = [];
+        }
+
+        $hub = is_array($kitConfig['shared']['hub'] ?? null) ? $kitConfig['shared']['hub'] : [];
+        $locationCodes = is_array($kitConfig['kit']['location_codes'] ?? null) ? $kitConfig['kit']['location_codes'] : [];
+        $code = static function (string $key) use ($hub, $locationCodes): string {
+            return trim((string) ($hub[$key] ?? $locationCodes[$key] ?? ''));
+        };
+
+        $deployment = strtolower(trim((string) ($hub['deployment'] ?? $kitConfig['kit']['deployment'] ?? '')));
+        $scope = 'barangay';
+        if (in_array($deployment, ['city', 'citymun', 'municipality'], true)) {
+            $scope = 'city';
+        } elseif (in_array($deployment, ['province', 'prov'], true)) {
+            $scope = 'province';
+        } elseif (in_array($deployment, ['region', 'reg'], true)) {
+            $scope = 'region';
+        } elseif ($deployment === 'other') {
+            $scope = 'other';
+        }
+
+        $codes = [
+            'country_code' => $code('country_code'),
+            'reg_code' => $code('reg_code'),
+            'prov_code' => $code('prov_code'),
+            'citymun_code' => $code('citymun_code'),
+            'brgy_code' => $code('brgy_code'),
+        ];
+        $codes = array_filter($codes, static fn ($value): bool => $value !== '');
+
+        $prepare['enabled'] = true;
+        $prepare['dry_run'] = !$apply;
+        $prepare['source'] = 'hub';
+        $prepare['deployment_scope'] = $scope;
+        if (!isset($prepare['base_url']) || trim((string) $prepare['base_url']) === '') {
+            $baseUrl = (string) ($config['app']['app_url'] ?? $app['app_url'] ?? $app['config']['app_url'] ?? $config['app_url'] ?? '');
+            if ($baseUrl !== '') {
+                $prepare['base_url'] = $baseUrl;
+            }
+        }
+        foreach ($codes as $key => $value) {
+            $prepare[$key] = $value;
+        }
+        if (count($codes) > 0) {
+            $prepare['codes'] = $codes;
+        }
+
+        if ($scope === 'city' && isset($codes['citymun_code'])) {
+            $prepare['citymun_code'] = $codes['citymun_code'];
+            $prepare['city_code'] = $codes['citymun_code'];
+            $prepare['municipality_code'] = $codes['citymun_code'];
+        } elseif ($scope === 'province' && isset($codes['prov_code'])) {
+            $prepare['prov_code'] = $codes['prov_code'];
+            $prepare['province_code'] = $codes['prov_code'];
+        } elseif ($scope === 'region' && isset($codes['reg_code'])) {
+            $prepare['reg_code'] = $codes['reg_code'];
+            $prepare['region_code'] = $codes['reg_code'];
+        } elseif (isset($codes['brgy_code'])) {
+            $prepare['brgy_code'] = $codes['brgy_code'];
+            $prepare['barangay_code'] = $codes['brgy_code'];
+            $prepare['psgc_code'] = $codes['brgy_code'];
+        }
+
+        $caFile = $this->bundledCaFile();
+        if ($caFile !== '') {
+            if (!isset($prepare['curl_ca_bundle']) || trim((string) $prepare['curl_ca_bundle']) === '') {
+                $prepare['curl_ca_bundle'] = $caFile;
+            }
+            if (!isset($prepare['ca_bundle']) || trim((string) $prepare['ca_bundle']) === '') {
+                $prepare['ca_bundle'] = $caFile;
+            }
+        }
+
+        $this->setNestedValue($config, 'mapserver.data_prep.prepare', $prepare);
+        return $config;
+    }
+
+    private function applyMapServerTlsConfig(array $config): array
+    {
+        $caFile = $this->bundledCaFile();
+        if ($caFile === '') {
+            return $config;
+        }
+
+        if (!isset($config['mapserver']) || !is_array($config['mapserver'])) {
+            $config['mapserver'] = [];
+        }
+
+        if (!isset($config['mapserver']['curl_ca_bundle']) || trim((string) $config['mapserver']['curl_ca_bundle']) === '') {
+            $config['mapserver']['curl_ca_bundle'] = $caFile;
+        }
+
+        return $config;
+    }
+
+    private function applyHotlineTlsConfig(array $config): array
+    {
+        $caFile = $this->bundledCaFile();
+        if ($caFile === '') {
+            return $config;
+        }
+
+        if (!isset($config['hotline']) || !is_array($config['hotline'])) {
+            $config['hotline'] = [];
+        }
+
+        if (!isset($config['hotline']['realtime_ca_bundle']) || trim((string) $config['hotline']['realtime_ca_bundle']) === '') {
+            $config['hotline']['realtime_ca_bundle'] = $caFile;
+        }
+
+        return $config;
+    }
+
+    private function runDataPrepTool(array $app, array $kitConfig, string $runDir, string $step, string $label, array $tool, string $appConfigPath, array $config): array
+    {
+        $relativePath = (string) ($tool['path'] ?? '');
+        $toolPath = $relativePath !== '' ? $this->joinPath($app['release_path'], $relativePath) : '';
+        $reportPath = $this->joinPath($runDir, 'apps' . DIRECTORY_SEPARATOR . $app['id'] . '.data-prep.' . $step . '.report.json');
+        if ($toolPath === '' || !is_file($toolPath)) {
+            return [
+                'name' => $step,
+                'step' => $step,
+                'label' => $label,
+                'status' => 'failed',
+                'message' => 'Data Prep tool not found: ' . $toolPath,
+            ];
+        }
+
+        $mode = (string) ($config['mode'] ?? 'initial');
+        if ($mode === 'fresh' || $mode === 'preflight') {
+            $mode = 'initial';
+        }
+
+        $command = [
+            (string) $kitConfig['runtime']['php_binary'],
+            $toolPath,
+            '--mode',
+            $mode,
+            '--config',
+            $appConfigPath,
+            '--report',
+            $reportPath,
+        ];
+
+        if ($this->hasDryRunEnabled($config, (string) ($tool['config_section'] ?? ''))) {
+            $command[] = '--dry-run';
+        }
+
+        $timeoutSeconds = $this->populationToolProcessTimeout($tool, $config);
+        $process = $this->runProcess($command, $app['release_path'], null, $timeoutSeconds);
+        $report = is_file($reportPath) ? $this->readJsonFile($reportPath) : null;
+        $reportStatus = is_array($report) ? (string) ($report['status'] ?? '') : '';
+        $status = $process['exit_code'] === 0 && !in_array($reportStatus, ['failed', 'error'], true) ? 'success' : 'failed';
+
+        return [
+            'name' => $step,
+            'step' => $step,
+            'label' => $label,
+            'path' => $this->absolutePath($toolPath),
+            'report_path' => $this->absolutePath($reportPath),
+            'status' => $status,
+            'message' => is_array($report) ? (string) ($report['summary'] ?? '') : '',
+            'exit_code' => $process['exit_code'],
+            'timed_out' => $process['timed_out'] ?? false,
+            'timeout_seconds' => $process['timeout_seconds'] ?? $timeoutSeconds,
+            'stdout' => $process['stdout'],
+            'stderr' => $process['stderr'],
+            'report_status' => $reportStatus !== '' ? $reportStatus : null,
+        ];
+    }
+
     private function runPopulationTool(array $app, array $kitConfig, string $runDir, string $runId, string $name, array $tool, string $appConfigPath): array
     {
         $relativePath = (string) ($tool['path'] ?? '');
@@ -4383,7 +7291,8 @@ POWERSHELL
             $command[] = '--dry-run';
         }
 
-        $process = $this->runProcess($command, $app['release_path']);
+        $timeoutSeconds = $this->populationToolProcessTimeout($tool, $config);
+        $process = $this->runProcess($command, $app['release_path'], null, $timeoutSeconds);
         $report = is_file($reportPath) ? $this->readJsonFile($reportPath) : null;
 
         return [
@@ -4392,6 +7301,8 @@ POWERSHELL
             'report_path' => $this->absolutePath($reportPath),
             'status' => $process['exit_code'] === 0 ? 'success' : 'failed',
             'exit_code' => $process['exit_code'],
+            'timed_out' => $process['timed_out'] ?? false,
+            'timeout_seconds' => $process['timeout_seconds'] ?? $timeoutSeconds,
             'stdout' => $process['stdout'],
             'stderr' => $process['stderr'],
             'report_status' => is_array($report) ? ($report['status'] ?? null) : null,
@@ -4443,7 +7354,8 @@ POWERSHELL
             $command[] = '--dry-run';
         }
 
-        $process = $this->runProcess($command, $app['release_path']);
+        $timeoutSeconds = $this->populationToolProcessTimeout($tool, $config);
+        $process = $this->runProcess($command, $app['release_path'], null, $timeoutSeconds);
         $report = is_file($reportPath) ? $this->readJsonFile($reportPath) : null;
 
         return [
@@ -4453,21 +7365,43 @@ POWERSHELL
             'report_path' => $this->absolutePath($reportPath),
             'status' => $process['exit_code'] === 0 ? 'success' : 'failed',
             'exit_code' => $process['exit_code'],
+            'timed_out' => $process['timed_out'] ?? false,
+            'timeout_seconds' => $process['timeout_seconds'] ?? $timeoutSeconds,
             'stdout' => $process['stdout'],
             'stderr' => $process['stderr'],
             'report_status' => is_array($report) ? ($report['status'] ?? null) : null,
         ];
     }
 
-    private function buildAppConfig(array $app, array $kitConfig, string $runId): array
+    private function populationToolProcessTimeout(array $tool, array $config): int
+    {
+        $sectionPath = (string) ($tool['config_section'] ?? '');
+        $section = $sectionPath !== '' ? $this->getNestedValue($config, $sectionPath) : null;
+        if (!is_array($section)) {
+            $section = [];
+        }
+        $populate = is_array($section['populate'] ?? null) ? $section['populate'] : $section;
+
+        $toolTimeout = $tool['timeout_seconds'] ?? $tool['timeout'] ?? null;
+        $configuredTimeout = $populate['timeout_seconds'] ?? $populate['timeout'] ?? null;
+        $timeout = $toolTimeout ?? $configuredTimeout ?? 1500;
+        if (!is_numeric($timeout)) {
+            $timeout = 1500;
+        }
+
+        return max(60, min(1700, (int) ceil((float) $timeout) + 30));
+    }
+
+    private function buildAppConfig(array $app, array $kitConfig, string $runId, ?string $modeOverride = null): array
     {
         $appConfig = $app['config'];
         $dependencies = $kitConfig['shared']['dependencies'] ?? [];
         $database = $appConfig['database'] ?? ($kitConfig['shared']['database'] ?? null);
+        $mode = $modeOverride !== null ? $modeOverride : (string) ($appConfig['mode'] ?? 'fresh');
 
         $result = [
             'schema_version' => 1,
-            'mode' => (string) ($appConfig['mode'] ?? 'fresh'),
+            'mode' => $mode,
             'kit' => [
                 'run_id' => $runId,
                 'node_id' => (string) $kitConfig['kit']['node_id'],
@@ -4487,9 +7421,11 @@ POWERSHELL
                 'startup_mode' => (string) ($appConfig['startup_mode'] ?? 'automatic'),
                 'registration_mode' => (string) ($kitConfig['runtime']['service_registration_mode'] ?? 'generate'),
             ],
+            'platform' => $this->buildAppPlatformConfig($kitConfig),
             'dependencies' => $dependencies,
             'secrets' => $kitConfig['shared']['secrets'] ?? ['policy' => 'app-generated'],
             'options' => [
+                'database_setup' => 'baseline_schema',
                 'run_migrations' => true,
                 'seed_initial_data' => true,
                 'write_env' => true,
@@ -4524,7 +7460,178 @@ POWERSHELL
             $result['admin'] = $this->resolveAdminConfig($kitConfig['shared']['admin']);
         }
 
+        $result = $this->applySharedInstallDefaults($result, $app);
+        if (($app['id'] ?? '') === 'pbb-mapserver') {
+            $result = $this->applyMapServerTlsConfig($result);
+        }
+        if (($app['id'] ?? '') === 'pbb-hotline') {
+            $result = $this->applyHotlineTlsConfig($result);
+        }
+
         return $result;
+    }
+
+    private function applySharedInstallDefaults(array $config, array $app): array
+    {
+        $appId = (string) ($app['id'] ?? '');
+        $releasePath = (string) ($app['release_path'] ?? '');
+        if ($appId === '' || $releasePath === '') {
+            return $config;
+        }
+
+        $defaultsPath = $this->joinPath($releasePath, 'resources' . DIRECTORY_SEPARATOR . 'kit-setup' . DIRECTORY_SEPARATOR . 'shared-install-defaults.json');
+        $defaults = $this->readOptionalJson($defaultsPath);
+        if (!is_array($defaults)) {
+            return $config;
+        }
+
+        if ((string) ($defaults['app_id'] ?? '') !== $appId) {
+            return $config;
+        }
+
+        $values = is_array($defaults['values'] ?? null) ? $defaults['values'] : [];
+        if ($appId === 'pbb-mapserver') {
+            $config = $this->applyMapServerSharedInstallDefaults($config, $values);
+        }
+
+        return $config;
+    }
+
+    private function applySharedInstallDefaultsToKitConfig(array $config): array
+    {
+        $apps = is_array($config['apps'] ?? null) ? $config['apps'] : [];
+        foreach ($apps as $index => $appConfig) {
+            if (!is_array($appConfig)) {
+                continue;
+            }
+
+            $appId = (string) ($appConfig['id'] ?? '');
+            $releasePath = (string) ($appConfig['release_path'] ?? $appConfig['install_path'] ?? '');
+            if ($appId === '' || $releasePath === '') {
+                continue;
+            }
+
+            $defaultsPath = $this->joinPath($releasePath, 'resources' . DIRECTORY_SEPARATOR . 'kit-setup' . DIRECTORY_SEPARATOR . 'shared-install-defaults.json');
+            $defaults = $this->readOptionalJson($defaultsPath);
+            if (!is_array($defaults) || (string) ($defaults['app_id'] ?? '') !== $appId) {
+                continue;
+            }
+
+            $values = is_array($defaults['values'] ?? null) ? $defaults['values'] : [];
+            if ($appId === 'pbb-mapserver') {
+                [$config, $appConfig] = $this->applyMapServerSharedDefaultsToKitConfig($config, $appConfig, $values);
+                $apps[$index] = $appConfig;
+            }
+        }
+
+        $config['apps'] = $apps;
+        return $config;
+    }
+
+    private function applyMapServerSharedDefaultsToKitConfig(array $config, array $appConfig, array $values): array
+    {
+        $mapserver = is_array($values['mapserver'] ?? null) ? $values['mapserver'] : [];
+        $sharedSecrets = $this->getNestedValue($values, 'shared.secrets.values');
+        if (!is_array($sharedSecrets)) {
+            $sharedSecrets = [];
+        }
+
+        foreach (['stadiamaps_api_key', 'maptiler_api_key'] as $key) {
+            $value = trim((string) ($mapserver[$key] ?? $sharedSecrets[$key] ?? ''));
+            if ($value === '' || $this->isPlaceholder($value)) {
+                continue;
+            }
+
+            if (!isset($config['shared']) || !is_array($config['shared'])) {
+                $config['shared'] = [];
+            }
+            if (!isset($config['shared']['secrets']) || !is_array($config['shared']['secrets'])) {
+                $config['shared']['secrets'] = ['policy' => 'kit-provided'];
+            }
+            if (!isset($config['shared']['secrets']['values']) || !is_array($config['shared']['secrets']['values'])) {
+                $config['shared']['secrets']['values'] = [];
+            }
+            $config['shared']['secrets']['values'][$key] = $value;
+
+            if (!isset($appConfig['config']) || !is_array($appConfig['config'])) {
+                $appConfig['config'] = [];
+            }
+            if (!isset($appConfig['config']['mapserver']) || !is_array($appConfig['config']['mapserver'])) {
+                $appConfig['config']['mapserver'] = [];
+            }
+            $appConfig['config']['mapserver'][$key] = $value;
+        }
+
+        return [$config, $appConfig];
+    }
+
+    private function applyMapServerSharedInstallDefaults(array $config, array $values): array
+    {
+        $mapserver = is_array($values['mapserver'] ?? null) ? $values['mapserver'] : [];
+        $sharedSecrets = $this->getNestedValue($values, 'shared.secrets.values');
+        if (!is_array($sharedSecrets)) {
+            $sharedSecrets = [];
+        }
+
+        foreach (['stadiamaps_api_key', 'maptiler_api_key'] as $key) {
+            $value = trim((string) ($mapserver[$key] ?? $sharedSecrets[$key] ?? ''));
+            if ($value === '' || $this->isPlaceholder($value)) {
+                continue;
+            }
+
+            if (!isset($config['mapserver']) || !is_array($config['mapserver'])) {
+                $config['mapserver'] = [];
+            }
+            $config['mapserver'][$key] = $value;
+
+            if (!isset($config['secrets']) || !is_array($config['secrets'])) {
+                $config['secrets'] = ['policy' => 'kit-provided'];
+            }
+            if (!isset($config['secrets']['values']) || !is_array($config['secrets']['values'])) {
+                $config['secrets']['values'] = [];
+            }
+            $config['secrets']['values'][$key] = $value;
+        }
+
+        return $config;
+    }
+
+    private function buildAppPlatformConfig(array $kitConfig): array
+    {
+        $platform = is_array($kitConfig['platform'] ?? null) ? $kitConfig['platform'] : [];
+
+        return array_filter([
+            'os' => $platform['os'] ?? (PHP_OS_FAMILY === 'Windows' ? 'windows' : 'linux'),
+            'web_server' => $platform['web_server'] ?? null,
+            'stack' => $platform['stack'] ?? null,
+            'apache_binary' => $platform['apache_binary'] ?? null,
+            'mysql_binary' => $platform['mysql_binary'] ?? null,
+            'ffmpeg_binary' => $platform['ffmpeg_binary'] ?? null,
+            'ffprobe_binary' => $platform['ffprobe_binary'] ?? null,
+        ], static fn ($value): bool => is_string($value) ? $value !== '' : $value !== null);
+    }
+
+    private function buildAppInstallerEnvironment(array $kitConfig): array
+    {
+        $environment = getenv();
+        if (!is_array($environment)) {
+            $environment = $_ENV;
+        }
+
+        $platform = is_array($kitConfig['platform'] ?? null) ? $kitConfig['platform'] : [];
+        $mysqlBinary = (string) ($platform['mysql_binary'] ?? '');
+        if ($mysqlBinary !== '' && is_file($mysqlBinary)) {
+            $mysqlBin = dirname($mysqlBinary);
+            $path = (string) ($environment['PATH'] ?? $environment['Path'] ?? getenv('PATH') ?: getenv('Path') ?: '');
+            if ($path === '' || stripos($path, $mysqlBin) === false) {
+                $path = $mysqlBin . PATH_SEPARATOR . $path;
+            }
+            $environment['PATH'] = $path;
+            $environment['Path'] = $path;
+            $environment['PBB_MYSQL_BINARY'] = $mysqlBinary;
+        }
+
+        return $environment;
     }
 
     private function resolveAdminConfig(array $admin): array
@@ -4744,7 +7851,22 @@ POWERSHELL
         return $current;
     }
 
-    private function runProcess(array $command, string $cwd): array
+    private function setNestedValue(array &$data, string $path, $value): void
+    {
+        $current = &$data;
+        foreach (explode('.', $path) as $part) {
+            if (!is_array($current)) {
+                $current = [];
+            }
+            if (!array_key_exists($part, $current) || !is_array($current[$part])) {
+                $current[$part] = [];
+            }
+            $current = &$current[$part];
+        }
+        $current = $value;
+    }
+
+    private function runProcess(array $command, string $cwd, ?array $environment = null, ?int $timeoutSeconds = null): array
     {
         $descriptorSpec = [
             0 => ['pipe', 'r'],
@@ -4753,21 +7875,71 @@ POWERSHELL
         ];
 
         $commandLine = implode(' ', array_map([$this, 'escapeArg'], $command));
-        $process = proc_open($commandLine, $descriptorSpec, $pipes, $cwd);
+        $process = proc_open($commandLine, $descriptorSpec, $pipes, $cwd, $environment);
         if (!is_resource($process)) {
             throw new RuntimeException('Unable to start process: ' . $commandLine);
         }
 
         fclose($pipes[0]);
-        $stdout = stream_get_contents($pipes[1]);
-        $stderr = stream_get_contents($pipes[2]);
+        if ($timeoutSeconds !== null) {
+            stream_set_blocking($pipes[1], false);
+            stream_set_blocking($pipes[2], false);
+        }
+
+        $stdout = '';
+        $stderr = '';
+        $timedOut = false;
+        $exitCode = null;
+
+        if ($timeoutSeconds === null) {
+            $stdout = stream_get_contents($pipes[1]);
+            $stderr = stream_get_contents($pipes[2]);
+        } else {
+            $deadline = microtime(true) + max(1, $timeoutSeconds);
+            while (true) {
+                $stdout .= (string) stream_get_contents($pipes[1]);
+                $stderr .= (string) stream_get_contents($pipes[2]);
+
+                $status = proc_get_status($process);
+                if (($status['running'] ?? false) !== true) {
+                    $exitCode = isset($status['exitcode']) ? (int) $status['exitcode'] : null;
+                    break;
+                }
+
+                if (microtime(true) >= $deadline) {
+                    $timedOut = true;
+                    $pid = isset($status['pid']) ? (int) $status['pid'] : 0;
+                    proc_terminate($process);
+                    if (PHP_OS_FAMILY === 'Windows' && $pid > 0) {
+                        @exec('taskkill.exe /PID ' . $pid . ' /T /F');
+                    }
+                    $stderr = trim($stderr . PHP_EOL . 'Process timed out after ' . $timeoutSeconds . ' seconds.');
+                    $exitCode = 124;
+                    break;
+                }
+
+                usleep(100000);
+            }
+
+            $stdout .= (string) stream_get_contents($pipes[1]);
+            $stderr .= (string) stream_get_contents($pipes[2]);
+        }
+
         fclose($pipes[1]);
         fclose($pipes[2]);
-        $exitCode = proc_close($process);
+        $closedExitCode = proc_close($process);
+        if ($exitCode === null && is_int($closedExitCode)) {
+            $exitCode = $closedExitCode;
+        }
+        if ($timedOut) {
+            $exitCode = 124;
+        }
 
         return [
             'command' => $commandLine,
-            'exit_code' => $exitCode,
+            'exit_code' => (int) $exitCode,
+            'timed_out' => $timedOut,
+            'timeout_seconds' => $timeoutSeconds,
             'stdout' => trim((string) $stdout),
             'stderr' => trim((string) $stderr),
         ];
@@ -4828,6 +8000,458 @@ POWERSHELL
             'version' => self::VERSION,
             'display_version' => self::DISPLAY_VERSION,
         ];
+    }
+
+    private function installStatePath(): string
+    {
+        $programData = (string) (getenv('ProgramData') ?: getenv('PROGRAMDATA') ?: 'C:\\ProgramData');
+        return $this->joinPath($programData, 'PBB' . DIRECTORY_SEPARATOR . 'KitSetup' . DIRECTORY_SEPARATOR . 'install-state.json');
+    }
+
+    private function assertDataPrepAllowed(): array
+    {
+        $path = $this->installStatePath();
+        if (!is_file($path)) {
+            throw new RuntimeException('Data Prep is locked because Kit Setup has not completed on this machine.');
+        }
+        $state = $this->readJsonFile($path);
+        if (($state['status'] ?? '') !== 'success') {
+            throw new RuntimeException('Data Prep is locked because the Kit Setup completion marker is not successful.');
+        }
+        if (!isset($state['apps']) || !is_array($state['apps']) || count($state['apps']) === 0) {
+            throw new RuntimeException('Data Prep is locked because the Kit Setup completion marker has no app topology.');
+        }
+        return $state;
+    }
+
+    private function applyInstallStateToDataPrepConfig(array $config, array $state): array
+    {
+        $installedApps = [];
+        foreach (($state['apps'] ?? []) as $app) {
+            if (!is_array($app)) {
+                continue;
+            }
+            $appId = (string) ($app['app_id'] ?? $app['id'] ?? '');
+            if ($appId === '') {
+                continue;
+            }
+            $installedApps[$appId] = $app;
+        }
+
+        if (count($installedApps) === 0) {
+            throw new RuntimeException('Data Prep is locked because the Kit Setup completion marker has no app topology.');
+        }
+
+        $configApps = [];
+        foreach (($config['apps'] ?? []) as $appConfig) {
+            if (!is_array($appConfig)) {
+                continue;
+            }
+            $appId = (string) ($appConfig['id'] ?? '');
+            if ($appId === '' || !isset($installedApps[$appId])) {
+                $appConfig['enabled'] = false;
+                $configApps[] = $appConfig;
+                continue;
+            }
+
+            $installed = $installedApps[$appId];
+            $scope = (string) ($installed['scope'] ?? 'local');
+            $installPath = (string) ($installed['install_path'] ?? '');
+            $baseUrl = (string) ($installed['base_url'] ?? '');
+            $healthUrl = (string) ($installed['health_url'] ?? '');
+            $healthUrl = $this->preferReleaseHealthUrl($installPath, $baseUrl, $healthUrl);
+
+            $appConfig['enabled'] = $scope === 'local' && $installPath !== '';
+            $appConfig['install_scope'] = $scope;
+            if ($installPath !== '') {
+                $appConfig['install_path'] = $installPath;
+                $appConfig['release_path'] = $installPath;
+                $appConfig['public_path'] = $appId === 'pbb-mapserver'
+                    ? $installPath
+                    : $this->joinPath($installPath, 'public');
+            }
+            if ($baseUrl !== '') {
+                $appConfig['app_url'] = $baseUrl;
+            }
+            if ($healthUrl !== '') {
+                if (!isset($appConfig['smoke']) || !is_array($appConfig['smoke'])) {
+                    $appConfig['smoke'] = [];
+                }
+                $appConfig['smoke']['url'] = $healthUrl;
+            }
+            $configApps[] = $appConfig;
+        }
+
+        $knownConfigIds = [];
+        foreach ($configApps as $appConfig) {
+            if (is_array($appConfig) && isset($appConfig['id'])) {
+                $knownConfigIds[(string) $appConfig['id']] = true;
+            }
+        }
+        foreach ($installedApps as $appId => $installed) {
+            if (isset($knownConfigIds[$appId])) {
+                continue;
+            }
+            $scope = (string) ($installed['scope'] ?? 'local');
+            $installPath = (string) ($installed['install_path'] ?? '');
+            $baseUrl = (string) ($installed['base_url'] ?? '');
+            $healthUrl = (string) ($installed['health_url'] ?? '');
+            $healthUrl = $this->preferReleaseHealthUrl($installPath, $baseUrl, $healthUrl);
+            $configApps[] = [
+                'id' => $appId,
+                'enabled' => $scope === 'local' && $installPath !== '',
+                'install_scope' => $scope,
+                'install_path' => $installPath,
+                'release_path' => $installPath,
+                'public_path' => $appId === 'pbb-mapserver' ? $installPath : $this->joinPath($installPath, 'public'),
+                'app_url' => $baseUrl !== '' ? $baseUrl : null,
+                'smoke' => $healthUrl !== '' ? ['url' => $healthUrl] : [],
+            ];
+        }
+
+        $config['apps'] = $configApps;
+        $config = $this->applyInstalledDependencyUrls($config, $installedApps);
+        $config['data_prep']['install_state'] = [
+            'source' => $this->installStatePath(),
+            'completed_at' => $state['completed_at'] ?? null,
+            'setup_run_id' => $state['kit_setup']['run_id'] ?? null,
+        ];
+        $config = $this->applyInstallStateSecretsToDataPrepConfig($config, $state);
+        if (isset($state['hub']) && is_array($state['hub'])) {
+            if (!isset($config['shared']) || !is_array($config['shared'])) {
+                $config['shared'] = [];
+            }
+            $config['shared']['hub'] = $state['hub'];
+            $config['kit']['hub_record_id'] = $state['hub']['hub_id'] ?? ($config['kit']['hub_record_id'] ?? null);
+            $config['kit']['node_id'] = $state['hub']['relay_hub_id'] ?? ($config['kit']['node_id'] ?? null);
+            $config['kit']['node_name'] = $state['hub']['name'] ?? ($config['kit']['node_name'] ?? null);
+            $config['kit']['deployment'] = $state['hub']['deployment'] ?? ($config['kit']['deployment'] ?? null);
+            $config['kit']['domain'] = $state['hub']['domain'] ?? ($config['kit']['domain'] ?? null);
+            $config['kit']['location_codes'] = [
+                'country_code' => $state['hub']['country_code'] ?? null,
+                'reg_code' => $state['hub']['reg_code'] ?? null,
+                'prov_code' => $state['hub']['prov_code'] ?? null,
+                'citymun_code' => $state['hub']['citymun_code'] ?? null,
+                'brgy_code' => $state['hub']['brgy_code'] ?? null,
+            ];
+        }
+        return $config;
+    }
+
+    private function applyInstallStateSecretsToDataPrepConfig(array $config, array $state): array
+    {
+        $setupRunDir = trim((string) ($state['artifacts']['run_dir'] ?? ''));
+        if ($setupRunDir === '') {
+            return $config;
+        }
+
+        $secretPath = $this->joinPath($setupRunDir, 'secrets' . DIRECTORY_SEPARATOR . 'kit-secrets.json');
+        $secretFile = $this->readOptionalJson($secretPath);
+        $setupValues = is_array($secretFile['values'] ?? null) ? $secretFile['values'] : [];
+        if (count($setupValues) === 0) {
+            return $config;
+        }
+
+        if (!isset($config['shared']) || !is_array($config['shared'])) {
+            $config['shared'] = [];
+        }
+        if (!isset($config['shared']['secrets']) || !is_array($config['shared']['secrets'])) {
+            $config['shared']['secrets'] = ['policy' => 'kit-provided'];
+        }
+        if (!isset($config['shared']['secrets']['values']) || !is_array($config['shared']['secrets']['values'])) {
+            $config['shared']['secrets']['values'] = [];
+        }
+
+        $copied = [];
+        foreach ($setupValues as $name => $value) {
+            if (!is_string($name) || $name === '' || !is_scalar($value)) {
+                continue;
+            }
+            $current = (string) ($config['shared']['secrets']['values'][$name] ?? '');
+            if ($current !== '' && !$this->isPlaceholder($current)) {
+                continue;
+            }
+            $stringValue = (string) $value;
+            if ($stringValue === '' || $this->isPlaceholder($stringValue)) {
+                continue;
+            }
+            $config['shared']['secrets']['values'][$name] = $stringValue;
+            $copied[] = $name;
+        }
+
+        if (count($copied) > 0) {
+            if (!isset($config['data_prep']) || !is_array($config['data_prep'])) {
+                $config['data_prep'] = [];
+            }
+            if (!isset($config['data_prep']['install_state']) || !is_array($config['data_prep']['install_state'])) {
+                $config['data_prep']['install_state'] = [];
+            }
+            $config['data_prep']['install_state']['secrets_source'] = $this->absolutePath($secretPath);
+            $config['data_prep']['install_state']['secrets_reused'] = array_values(array_unique($copied));
+        }
+
+        return $config;
+    }
+
+    private function applyInstalledDependencyUrls(array $config, array $installedApps): array
+    {
+        $dependencyMap = [
+            'pbb-maestro' => 'maestro',
+            'pbb-realtime' => 'realtime',
+            'pbb-relay' => 'relay',
+            'pbb-mapserver' => 'mapserver',
+        ];
+
+        foreach ($dependencyMap as $appId => $dependencyKey) {
+            $baseUrl = trim((string) ($installedApps[$appId]['base_url'] ?? ''));
+            if ($baseUrl === '') {
+                continue;
+            }
+            if (!isset($config['dependencies']) || !is_array($config['dependencies'])) {
+                $config['dependencies'] = [];
+            }
+            if (!isset($config['dependencies'][$dependencyKey]) || !is_array($config['dependencies'][$dependencyKey])) {
+                $config['dependencies'][$dependencyKey] = [];
+            }
+            $config['dependencies'][$dependencyKey]['base_url'] = $baseUrl;
+
+            if (!isset($config['shared']) || !is_array($config['shared'])) {
+                $config['shared'] = [];
+            }
+            if (!isset($config['shared']['dependencies']) || !is_array($config['shared']['dependencies'])) {
+                $config['shared']['dependencies'] = [];
+            }
+            if (!isset($config['shared']['dependencies'][$dependencyKey]) || !is_array($config['shared']['dependencies'][$dependencyKey])) {
+                $config['shared']['dependencies'][$dependencyKey] = [];
+            }
+            $config['shared']['dependencies'][$dependencyKey]['base_url'] = $baseUrl;
+        }
+
+        return $config;
+    }
+
+    private function buildInstallState(array $config, array $finishReport, array $context, string $finishReportPath): array
+    {
+        $now = date(DATE_ATOM);
+        $runDir = (string) ($context['run_dir'] ?? '');
+        $hubReport = $runDir !== '' ? $this->readOptionalJson($this->joinPath($runDir, 'hub-report.json')) : null;
+        return [
+            'schema_version' => 1,
+            'kind' => 'pbb-kit-setup-install-state',
+            'status' => 'success',
+            'completed_at' => $finishReport['finished_at'] ?? $now,
+            'kit_setup' => [
+                'milestone' => self::MILESTONE,
+                'version' => self::VERSION,
+                'display_version' => self::DISPLAY_VERSION,
+                'run_id' => $context['run_id'] ?? null,
+            ],
+            'setup_operator' => $this->setupOperator(),
+            'machine' => [
+                'hostname' => gethostname() ?: null,
+                'os' => $config['platform']['os'] ?? PHP_OS_FAMILY,
+                'install_base' => $config['paths']['apps_base'] ?? ($config['layout']['base_path'] ?? null),
+            ],
+            'network' => [
+                'machine_ip' => $config['machine']['ip_address'] ?? null,
+                'dns_zone' => $config['dns']['zone'] ?? ($config['domains']['zone'] ?? null),
+                'technitium_base_url' => $config['dns']['base_url'] ?? null,
+            ],
+            'runtime' => $this->runtimeState($config),
+            'hub' => $this->installStateHub($config, $hubReport),
+            'apps' => $this->installStateApps($config, $finishReport),
+            'artifacts' => [
+                'run_dir' => $context['run_dir'] ?? null,
+                'finish_report' => $this->absolutePath($finishReportPath),
+                'runtime_config' => $context['config_path'] ?? null,
+            ],
+            'data_prep' => [
+                'allowed' => true,
+                'reason' => 'setup_completed',
+            ],
+            'integrity' => [
+                'written_by' => 'pbb-kit-setup',
+                'written_at' => $now,
+            ],
+        ];
+    }
+
+    private function runtimeState(array $config): array
+    {
+        return [
+            'php_binary' => (string) ($config['runtime']['php_binary'] ?? ''),
+            'apache_binary' => (string) ($config['platform']['apache_binary'] ?? ''),
+            'mysql_binary' => (string) ($config['platform']['mysql_binary'] ?? ''),
+        ];
+    }
+
+    private function setupOperator(): array
+    {
+        $domain = (string) (getenv('USERDOMAIN') ?: getenv('COMPUTERNAME') ?: '');
+        $username = (string) (getenv('USERNAME') ?: getenv('USER') ?: '');
+        return [
+            'windows_username' => $username !== '' ? $username : null,
+            'windows_domain' => $domain !== '' ? $domain : null,
+            'user_profile' => (string) (getenv('USERPROFILE') ?: '') ?: null,
+            'sid' => (string) (getenv('USER_SID') ?: '') ?: null,
+            'captured_at' => date(DATE_ATOM),
+        ];
+    }
+
+    private function installStateHub(array $config, ?array $hubReport = null): array
+    {
+        $configHub = is_array($config['shared']['hub'] ?? null) ? $config['shared']['hub'] : [];
+        $reportHub = [];
+        if (is_array($hubReport) && ($hubReport['status'] ?? '') === 'success' && is_array($hubReport['hub'] ?? null)) {
+            $reportHub = $hubReport['hub'];
+        }
+        $hub = array_merge($configHub, $reportHub);
+        $locationCodes = is_array($config['kit']['location_codes'] ?? null) ? $config['kit']['location_codes'] : [];
+
+        return [
+            'base_url' => $hub['base_url'] ?? ($configHub['base_url'] ?? ($config['hub']['base_url'] ?? null)),
+            'hub_id' => $reportHub['hub_id'] ?? ($reportHub['id'] ?? ($hub['hub_id'] ?? ($hub['id'] ?? ($config['kit']['hub_record_id'] ?? ($config['hub']['hub_id'] ?? null))))),
+            'relay_hub_id' => $hub['relay_hub_id'] ?? ($config['kit']['node_id'] ?? null),
+            'name' => $hub['name'] ?? ($config['kit']['node_name'] ?? null),
+            'code' => $hub['code'] ?? null,
+            'deployment' => $hub['deployment'] ?? ($config['kit']['deployment'] ?? null),
+            'domain' => $hub['domain'] ?? ($config['kit']['domain'] ?? null),
+            'status' => $hub['status'] ?? null,
+            'country_code' => $hub['country_code'] ?? ($locationCodes['country_code'] ?? null),
+            'reg_code' => $hub['reg_code'] ?? ($locationCodes['reg_code'] ?? null),
+            'prov_code' => $hub['prov_code'] ?? ($locationCodes['prov_code'] ?? null),
+            'citymun_code' => $hub['citymun_code'] ?? ($locationCodes['citymun_code'] ?? null),
+            'brgy_code' => $hub['brgy_code'] ?? ($locationCodes['brgy_code'] ?? null),
+            'uplinks' => $this->redactInstallStateHubList($hub['uplinks'] ?? []),
+            'sources' => $this->redactInstallStateHubList($hub['sources'] ?? []),
+        ];
+    }
+
+    private function redactInstallStateHubList($items): array
+    {
+        if (!is_array($items)) {
+            return [];
+        }
+        $result = [];
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $clean = $item;
+            foreach (array_keys($clean) as $key) {
+                if (preg_match('/token|secret|password|private[_-]?key/i', (string) $key) === 1) {
+                    unset($clean[$key]);
+                }
+            }
+            $result[] = $clean;
+        }
+        return $result;
+    }
+
+    private function installStateApps(array $config, array $finishReport): array
+    {
+        $finishApps = [];
+        foreach (($finishReport['apps'] ?? []) as $app) {
+            if (is_array($app)) {
+                $finishApps[(string) ($app['id'] ?? $app['app_id'] ?? '')] = $app;
+            }
+        }
+        $smokeStatuses = $this->finishSmokeStatusByApp($finishReport);
+        $apps = [];
+        foreach (($config['apps'] ?? []) as $appConfig) {
+            if (!is_array($appConfig) || ($appConfig['enabled'] ?? true) === false) {
+                continue;
+            }
+            $appId = (string) ($appConfig['id'] ?? '');
+            if ($appId === '') {
+                continue;
+            }
+            $finishApp = $finishApps[$appId] ?? [];
+            $appUrl = (string) ($appConfig['app_url'] ?? ($finishApp['url'] ?? ''));
+            $healthUrl = $this->installStateHealthUrl($appConfig, $finishApp, $appUrl);
+            $apps[] = [
+                'app_id' => $appId,
+                'app_code' => preg_replace('/^pbb-/', '', $appId),
+                'display_name' => $finishApp['name'] ?? $appId,
+                'scope' => (string) ($appConfig['install_scope'] ?? 'local'),
+                'version' => $finishApp['version'] ?? ($finishApp['manifest']['version'] ?? null),
+                'install_path' => $appConfig['install_path'] ?? null,
+                'base_url' => $appUrl !== '' ? $appUrl : null,
+                'health_url' => $healthUrl !== '' ? $healthUrl : null,
+                'smoke_status' => $smokeStatuses[$appId] ?? null,
+            ];
+        }
+        return $apps;
+    }
+
+    private function installStateHealthUrl(array $appConfig, array $finishApp, string $appUrl): string
+    {
+        $healthUrl = (string) ($appConfig['smoke']['url'] ?? ($finishApp['health_url'] ?? ''));
+        if ($healthUrl !== '') {
+            return $healthUrl;
+        }
+
+        $releasePath = (string) ($appConfig['release_path'] ?? $appConfig['install_path'] ?? '');
+        $release = $releasePath !== '' ? $this->readOptionalJson($this->joinPath($releasePath, 'release.json')) : null;
+        $healthPath = '';
+        if (is_array($release) && is_array($release['health'] ?? null)) {
+            $healthPath = (string) ($release['health']['http'] ?? $release['health']['ready'] ?? $release['health']['status'] ?? '');
+        }
+
+        if ($appUrl !== '' && $healthPath !== '') {
+            return $this->joinUrlPath($appUrl, $healthPath);
+        }
+
+        return $appUrl !== '' ? rtrim($appUrl, '/') . '/up' : '';
+    }
+
+    private function preferReleaseHealthUrl(string $installPath, string $baseUrl, string $currentHealthUrl): string
+    {
+        if ($installPath === '' || $baseUrl === '') {
+            return $currentHealthUrl;
+        }
+
+        $isGenericUp = preg_match('#/up/?$#i', $currentHealthUrl) === 1;
+        if ($currentHealthUrl !== '' && !$isGenericUp) {
+            return $currentHealthUrl;
+        }
+
+        $release = $this->readOptionalJson($this->joinPath($installPath, 'release.json'));
+        if (!is_array($release) || !is_array($release['health'] ?? null)) {
+            return $currentHealthUrl;
+        }
+
+        $healthPath = (string) ($release['health']['http'] ?? $release['health']['ready'] ?? $release['health']['status'] ?? '');
+        if ($healthPath === '') {
+            return $currentHealthUrl;
+        }
+
+        return $this->joinUrlPath($baseUrl, $healthPath);
+    }
+
+    private function joinUrlPath(string $baseUrl, string $path): string
+    {
+        return rtrim($baseUrl, '/') . '/' . ltrim($path, '/');
+    }
+
+    private function finishSmokeStatusByApp(array $finishReport): array
+    {
+        $path = (string) ($finishReport['reports']['smoke_report'] ?? '');
+        $report = $path !== '' ? $this->readOptionalJson($path) : null;
+        $statuses = [];
+        if (!is_array($report) || !is_array($report['apps'] ?? null)) {
+            return $statuses;
+        }
+        foreach ($report['apps'] as $app) {
+            if (!is_array($app)) {
+                continue;
+            }
+            $appId = (string) ($app['app_id'] ?? $app['id'] ?? '');
+            if ($appId !== '') {
+                $statuses[$appId] = $app['status'] ?? null;
+            }
+        }
+        return $statuses;
     }
 
     private function recordCheckpoint(string $runDir, array $context, array $report, string $reportPath): void
@@ -4924,6 +8548,32 @@ POWERSHELL
         if (!rmdir($real)) {
             throw new RuntimeException('Unable to remove directory: ' . $real);
         }
+    }
+
+    private function isPathInside(string $path, string $root): bool
+    {
+        $path = rtrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path), DIRECTORY_SEPARATOR);
+        $root = rtrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $root), DIRECTORY_SEPARATOR);
+        if (PHP_OS_FAMILY === 'Windows') {
+            $path = strtolower($path);
+            $root = strtolower($root);
+        }
+        return $path === $root || strpos($path, $root . DIRECTORY_SEPARATOR) === 0;
+    }
+
+    private function relativePath(string $root, string $path): string
+    {
+        $root = rtrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $root), DIRECTORY_SEPARATOR);
+        $path = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
+        $compareRoot = PHP_OS_FAMILY === 'Windows' ? strtolower($root) : $root;
+        $comparePath = PHP_OS_FAMILY === 'Windows' ? strtolower($path) : $path;
+        if ($comparePath === $compareRoot) {
+            return '';
+        }
+        if (strpos($comparePath, $compareRoot . DIRECTORY_SEPARATOR) !== 0) {
+            return $path;
+        }
+        return substr($path, strlen($root) + 1);
     }
 
     private function copyDirectory(string $source, string $target, ?callable $progress = null): void
