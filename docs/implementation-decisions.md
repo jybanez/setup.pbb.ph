@@ -42,6 +42,10 @@ Reports must redact token and password material. Generated runtime config and ra
 
 Technitium is the target local DNS provider for current PBB node kits.
 
+For the desktop setup flow, Technitium must be reachable before Admin Inputs are shown. The setup startup gate probes `http://dns.<zone>:5380`, normally `http://dns.pbb.ph:5380`, and verifies that the HTTP response looks like Technitium.
+
+The Technitium API URL may use a domain name. The Windows DNS client target may not rely on a domain name because the machine may need DNS working before it can resolve that domain. When `Set this machine to use local DNS` is enabled and the hidden Windows DNS Server input is blank, Kit Setup derives the IPv4 target from the startup gate or refreshed Technitium discovery and writes that IPv4 to `dns.client_nameserver`.
+
 ## Windows Firewall
 
 Kit Setup owns host-level Windows Firewall inbound rules needed for local app access. The guarded `firewall-apply` action replaces same-named Project Bantay Bayan HTTP/HTTPS rules and opens TCP 80 and 443 when `platform.firewall.update_mode=apply`. App installers should not create global firewall rules directly under Kit orchestration.
@@ -150,6 +154,8 @@ Project Bantay Bayan Data Prep
 This keeps the core install path simpler and safer. Data preparation may be repeated later to refresh tiles, boundaries, reference records, routing data, teams, policies, or local cache. A failed data preparation run should not imply that the node installation itself failed.
 
 `Data Prep` is the product/workflow name. Individual app population tools should receive app-owned execution modes such as `initial`, `repair`, `refresh`, or `demo`; `data-prep` is not a required CLI mode for app tools.
+
+Data Prep does not show or run the setup Startup Requirements gate. It is gated by the Kit Setup completion marker and `install-state.json`, then uses the completed setup state for selected apps and runtime paths.
 
 ## Installer Ownership Boundaries
 

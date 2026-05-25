@@ -61,7 +61,22 @@
 
         <section class="workflow-stepper" id="setupWorkflowStepper" aria-label="Setup workflow"></section>
 
-        <section class="setup-form" aria-label="Setup inputs">
+        <section class="prerequisite-gate" id="prerequisiteGatePanel" aria-label="Setup prerequisites">
+          <div class="prerequisite-gate-header">
+            <div>
+              <p class="eyebrow">Startup Requirements</p>
+              <h3>Checking this machine and local DNS before setup inputs.</h3>
+            </div>
+            <span class="status-pill pending" id="prerequisiteGateStatus">Checking</span>
+          </div>
+          <div class="prerequisite-gate-grid" id="prerequisiteGateGrid"></div>
+          <div class="prerequisite-gate-actions">
+            <p id="prerequisiteGateMessage">WAMPServer on this machine and Technitium at dns.pbb.ph are required for automated setup.</p>
+            <button class="secondary" id="rerunPrerequisiteGateButton" type="button">Check Again</button>
+          </div>
+        </section>
+
+        <section class="setup-form" aria-label="Setup inputs" hidden>
           <div class="input-overview">
             <div>
               <p class="eyebrow">Admin Inputs</p>

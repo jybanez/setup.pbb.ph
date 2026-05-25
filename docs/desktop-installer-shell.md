@@ -17,6 +17,9 @@ The shell does not duplicate installer logic. It calls the PHP runner actions an
 - Front-loads all administrator-owned inputs on the first stage so manual testing and future automation use the same setup contract.
 - Uses the vendored official PBB Helper UI bundle for the workflow stepper, app scope segmented controls, and package progress.
 - Shows the Kit Setup version in the sidebar.
+- Shows a setup-only Startup Requirements gate before Admin Inputs are available.
+- Requires WAMPServer Apache/MySQL or MariaDB services and Technitium at `http://dns.<zone>:5380` before automated Setup can continue.
+- Keeps the Technitium URL as a URL, while deriving an IPv4 target for the hidden Windows DNS client setting before validation/config generation.
 - Keeps the sidebar and main content scroll areas independent.
 - Shows per-stage validation and inline recovery guidance.
 - Shows same-run action checkpoints for retry/resume visibility.
@@ -57,6 +60,27 @@ The shell does not duplicate installer logic. It calls the PHP runner actions an
 - Runs `service-plan`, `service-start`, and `service-verify` before `smoke-check` so app-declared runtime services such as Realtime's websocket daemon are installed as WinSW Windows services, started, and verified before public endpoint smoke tests.
 - Uses only the vendored WinSW wrapper for app runtime services. `service-stop` stops matching WinSW services before overwrite/repair and during current-run cleanup; reports include generated service file paths and WinSW command output for troubleshooting.
 - The Windows uninstaller runs `bin\cleanup-winsw-services.ps1`, which stops/uninstalls WinSW services under `C:\ProgramData\PBB\Services` and also removes matching Kit-managed Windows service registrations with `sc.exe delete`, so app runtime services do not remain in Windows Services after Kit Setup is removed.
+
+## Release Candidate
+
+Current release-candidate build:
+
+```text
+Project Bantay Bayan Setup 0.1.118.exe
+```
+
+SHA256:
+
+```text
+6CA2B316D242230AC76B84A00CEE7EF9971DE33BFA619F53C12EDA085BD37C8D
+```
+
+Behavior locked for this candidate:
+
+- Setup mode shows the Startup Requirements gate before Admin Inputs.
+- Setup mode keeps the gate result until the operator clicks `Check Again`; Start Installation does not force a gate rerun.
+- `http://dns.pbb.ph:5380` may remain the Technitium URL, but the Windows DNS client target is resolved/probed to an IPv4 address before validation.
+- Data Prep mode hides the Startup Requirements gate and is gated only by the completed Kit Setup state.
 
 ## Confirmation Gates
 

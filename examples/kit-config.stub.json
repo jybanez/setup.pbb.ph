@@ -12,6 +12,28 @@
     "service_manager": "manual",
     "service_registration_mode": "generate"
   },
+  "machine": {
+    "id": "dev-node",
+    "ip_address": "127.0.0.1",
+    "selected_apps": ["pbb-stub"]
+  },
+  "packages": {
+    "source": "bundled",
+    "base_path": "C:\\wamp64\\www\\pbb\\kit-setup\\packages",
+    "manifest_path": "C:\\wamp64\\www\\pbb\\kit-setup\\packages\\packages.stub-local.example.json",
+    "dry_run": true,
+    "signature_policy": "warn"
+  },
+  "domains": {
+    "zone": "pbb.local",
+    "stub": "stub.pbb.local"
+  },
+  "dns": {
+    "provider": "manual",
+    "zone": "pbb.local",
+    "ttl": 300,
+    "update_mode": "plan-only"
+  },
   "shared": {
     "database": {
       "driver": "mysql",

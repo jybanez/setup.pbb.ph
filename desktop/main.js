@@ -109,13 +109,17 @@ async function detectTechnitium(form = {}) {
   const candidates = await technitiumCandidates(form);
   const results = [];
   for (const candidate of candidates) {
+    const resolvedIps = await resolveIpv4Addresses(hostFromUrl(candidate.url));
     const result = await probeTechnitium(candidate.url, candidate.source);
+    result.resolved_ips = resolvedIps;
     results.push(result);
     if (result.status === 'success') {
       return {
         status: 'success',
         url: result.url,
         source: result.source,
+        remote_address: result.remote_address || '',
+        resolved_ips: resolvedIps,
         message: 'Technitium DNS was detected.',
         candidates: results
       };
@@ -128,6 +132,173 @@ async function detectTechnitium(form = {}) {
     message: 'No reachable Technitium DNS instance was detected.',
     candidates: results
   };
+}
+
+async function inspectSetupPrerequisites(form = {}) {
+  const startedAt = new Date().toISOString();
+  const wamp = await inspectWampPrerequisite();
+  const technitium = await inspectTechnitiumDnsZonePrerequisite(form);
+  const zone = String(form.dnsZone || 'pbb.ph').trim() || 'pbb.ph';
+  const errors = [];
+  if (wamp.status !== 'success') {
+    errors.push('WAMPServer is required on this machine before setup can continue.');
+  }
+  if (technitium.status !== 'success') {
+    errors.push(`Technitium DNS must be reachable at dns.${zone} before setup can continue.`);
+  }
+  return {
+    status: errors.length > 0 ? 'failed' : 'success',
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+    wamp,
+    technitium,
+    errors
+  };
+}
+
+async function inspectWampPrerequisite() {
+  const root = 'C:\\wamp64';
+  const apacheBinary = findApacheBinary();
+  const mysqlBinary = findMysqlBinary();
+  const apacheService = await firstWindowsServiceState(['wampapache64', 'wampapache']);
+  const databaseService = await firstWindowsServiceState(['wampmariadb64', 'wampmysql64', 'wampmysqld64']);
+  const checks = [
+    {
+      id: 'wamp_root',
+      label: 'WAMP root',
+      status: fs.existsSync(root) ? 'success' : 'failed',
+      path: root
+    },
+    {
+      id: 'apache_binary',
+      label: 'Apache httpd.exe',
+      status: apacheBinary && fs.existsSync(apacheBinary) ? 'success' : 'failed',
+      path: apacheBinary || ''
+    },
+    {
+      id: 'mysql_binary',
+      label: 'MySQL/MariaDB mysql.exe',
+      status: mysqlBinary && fs.existsSync(mysqlBinary) ? 'success' : 'failed',
+      path: mysqlBinary || ''
+    },
+    {
+      id: 'apache_service',
+      label: 'WAMP Apache service',
+      status: apacheService.status === 'running' ? 'success' : 'failed',
+      service_name: apacheService.service_name || '',
+      state: apacheService.state || apacheService.status
+    },
+    {
+      id: 'database_service',
+      label: 'WAMP MySQL/MariaDB service',
+      status: databaseService.status === 'running' ? 'success' : 'failed',
+      service_name: databaseService.service_name || '',
+      state: databaseService.state || databaseService.status
+    }
+  ];
+  return {
+    status: checks.every((check) => check.status === 'success') ? 'success' : 'failed',
+    root,
+    apache_binary: apacheBinary || '',
+    mysql_binary: mysqlBinary || '',
+    checks
+  };
+}
+
+async function firstWindowsServiceState(serviceNames) {
+  if (process.platform !== 'win32') {
+    return { status: 'unsupported', service_name: '', state: '' };
+  }
+  const checked = [];
+  for (const serviceName of serviceNames) {
+    const state = await inspectWindowsServiceState(serviceName);
+    checked.push(state);
+    if (state.status !== 'not-found') {
+      return { ...state, checked };
+    }
+  }
+  return { status: 'not-found', service_name: '', state: '', checked };
+}
+
+async function inspectWindowsServiceState(serviceName) {
+  const result = await runProcess('sc.exe', ['query', serviceName], process.env, { timeoutMs: 4000 });
+  const output = `${result.stdout}\n${result.stderr}`.trim();
+  if (result.exitCode !== 0) {
+    return {
+      status: 'not-found',
+      service_name: serviceName,
+      state: '',
+      exit_code: result.exitCode
+    };
+  }
+  const match = output.match(/STATE\s*:\s*\d+\s+([A-Z_]+)/i);
+  const state = match ? match[1].toUpperCase() : '';
+  return {
+    status: state === 'RUNNING' ? 'running' : 'stopped',
+    service_name: serviceName,
+    state,
+    exit_code: result.exitCode
+  };
+}
+
+async function inspectTechnitiumDnsZonePrerequisite(form = {}) {
+  const zone = String(form.dnsZone || 'pbb.ph').trim() || 'pbb.ph';
+  const host = `dns.${zone}`;
+  const resolvedIps = new Set(await resolveIpv4Addresses(host));
+  const url = normalizeTechnitiumUrl(`http://${host}:5380`);
+  const probe = await probeTechnitium(url, 'dns-zone-host');
+  const probeAddress = normalizeIpv4Address(probe.remote_address || '');
+  if (probeAddress) {
+    resolvedIps.add(probeAddress);
+  }
+  const resolvedIpList = Array.from(resolvedIps);
+  return {
+    status: probe.status === 'success' ? 'success' : 'failed',
+    host,
+    url,
+    resolved_ips: resolvedIpList,
+    resolved: resolvedIpList.length > 0,
+    probe
+  };
+}
+
+function normalizeIpv4Address(value) {
+  const text = String(value || '').trim();
+  const mapped = text.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  const candidate = mapped ? mapped[1] : text;
+  return looksLikeIpv4Address(candidate) ? candidate : '';
+}
+
+async function resolveIpv4Addresses(host) {
+  const text = String(host || '').trim();
+  if (!text) {
+    return [];
+  }
+  const addresses = new Set();
+  if (looksLikeIpv4Address(text)) {
+    addresses.add(text);
+  }
+  try {
+    for (const address of await dns.promises.resolve4(text)) {
+      if (looksLikeIpv4Address(address)) {
+        addresses.add(address);
+      }
+    }
+  } catch (_error) {
+    // dns.resolve4 can miss Windows resolver search policy; dns.lookup follows the OS resolver.
+  }
+  try {
+    const records = await dns.promises.lookup(text, { family: 4, all: true });
+    for (const record of records) {
+      const address = normalizeIpv4Address(record?.address || '');
+      if (address) {
+        addresses.add(address);
+      }
+    }
+  } catch (_error) {
+    // The HTTP probe may still succeed if the resolver path is available to WinHTTP/curl.
+  }
+  return Array.from(addresses);
 }
 
 async function technitiumCandidates(form = {}) {
@@ -176,6 +347,14 @@ function normalizeTechnitiumUrl(value) {
   }
 }
 
+function hostFromUrl(value) {
+  try {
+    return new URL(value).hostname;
+  } catch (_error) {
+    return '';
+  }
+}
+
 function probeTechnitium(url, source) {
   return new Promise((resolve) => {
     let parsed;
@@ -186,11 +365,13 @@ function probeTechnitium(url, source) {
       return;
     }
     const client = parsed.protocol === 'https:' ? https : http;
+    let socketRemoteAddress = '';
     const request = client.get(parsed, {
       timeout: 2500,
       rejectUnauthorized: false,
       headers: { 'User-Agent': 'PBB-Kit-Setup' }
     }, (response) => {
+      socketRemoteAddress = normalizeIpv4Address(response.socket?.remoteAddress || socketRemoteAddress);
       let body = '';
       response.setEncoding('utf8');
       response.on('data', (chunk) => {
@@ -200,13 +381,20 @@ function probeTechnitium(url, source) {
         const looksLikeTechnitium = /technitium/i.test(body)
           || /technitium/i.test(String(response.headers.server || ''))
           || /dns server/i.test(body);
+        const remoteAddress = normalizeIpv4Address(response.socket?.remoteAddress || socketRemoteAddress);
         resolve({
           status: looksLikeTechnitium ? 'success' : 'failed',
           url,
           source,
           http_status: response.statusCode,
+          remote_address: remoteAddress,
           message: looksLikeTechnitium ? 'Technitium response detected.' : 'HTTP response did not look like Technitium.'
         });
+      });
+    });
+    request.on('socket', (socket) => {
+      socket.on('connect', () => {
+        socketRemoteAddress = normalizeIpv4Address(socket.remoteAddress || socketRemoteAddress);
       });
     });
     request.on('timeout', () => {
@@ -550,6 +738,11 @@ ipcMain.handle('kit:detect-local-ip', async () => detectLocalIpAddress());
 ipcMain.handle('kit:detect-technitium', async (_event, request) => {
   const form = request && request.form ? request.form : {};
   return detectTechnitium(form);
+});
+
+ipcMain.handle('kit:inspect-prerequisites', async (_event, request) => {
+  const form = request && request.form ? request.form : {};
+  return inspectSetupPrerequisites(form);
 });
 
 ipcMain.handle('kit:inspect-windows-installer', async () => inspectWindowsInstaller());

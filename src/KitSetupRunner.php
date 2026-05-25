@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.100';
+    private const VERSION = '0.1.118';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.100';
+    private const DISPLAY_VERSION = 'v1-0.1.118';
     private const SERVICE_WRAPPER = 'winsw';
     private ?string $progressFile = null;
 
@@ -85,7 +85,11 @@ final class KitSetupRunner
             }
 
             if (($config['hub']['auto_resolve'] ?? false) === true) {
-                $config = $this->runHubResolve($config, $runDir, $context)['config'];
+                $result = $this->runHubResolve($config, $runDir, $context);
+                $config = $result['config'];
+                $this->writeJsonFile($this->joinPath($runDir, 'hub-resolved-config.json'), $config);
+            } else {
+                $config = $this->applyResolvedHubConfigFromRunDir($config, $runDir);
             }
 
             if ($action === 'prepare-packages') {
@@ -2117,6 +2121,7 @@ final class KitSetupRunner
             'pbb-realtime' => 'realtime',
             'pbb-relay' => 'relay',
             'pbb-hotline' => 'hotline',
+            'pbb-stub' => 'stub',
         ];
         $selected = $this->selectedLocalAppIds($config);
         foreach ($selected as $appId) {
@@ -4342,6 +4347,7 @@ POWERSHELL
             'pbb-realtime' => 'realtime',
             'pbb-relay' => 'relay',
             'pbb-hotline' => 'hotline',
+            'pbb-stub' => 'stub',
         ];
         $domains = is_array($config['domains'] ?? null) ? $config['domains'] : [];
         $entries = [];
@@ -6049,6 +6055,46 @@ POWERSHELL
         return $config;
     }
 
+    private function applyResolvedHubConfigFromRunDir(array $config, string $runDir): array
+    {
+        $path = $this->joinPath($runDir, 'hub-resolved-config.json');
+        $resolved = $this->readOptionalJson($path);
+        if (!is_array($resolved)) {
+            return $config;
+        }
+
+        if (isset($resolved['kit']) && is_array($resolved['kit'])) {
+            if (!isset($config['kit']) || !is_array($config['kit'])) {
+                $config['kit'] = [];
+            }
+            foreach (['hub_record_id', 'node_id', 'node_name', 'deployment', 'domain', 'location_codes'] as $key) {
+                if (array_key_exists($key, $resolved['kit'])) {
+                    $config['kit'][$key] = $resolved['kit'][$key];
+                }
+            }
+        }
+
+        if (isset($resolved['shared']['hub']) && is_array($resolved['shared']['hub'])) {
+            if (!isset($config['shared']) || !is_array($config['shared'])) {
+                $config['shared'] = [];
+            }
+            $config['shared']['hub'] = $resolved['shared']['hub'];
+        }
+
+        if (isset($resolved['hub']) && is_array($resolved['hub'])) {
+            if (!isset($config['hub']) || !is_array($config['hub'])) {
+                $config['hub'] = [];
+            }
+            foreach (['base_url', 'hub_id', 'token_env', 'auto_resolve'] as $key) {
+                if (array_key_exists($key, $resolved['hub'])) {
+                    $config['hub'][$key] = $resolved['hub'][$key];
+                }
+            }
+        }
+
+        return $config;
+    }
+
     private function redactHubForReport(array $hub): array
     {
         if (isset($hub['token']) && is_array($hub['token'])) {
@@ -6423,6 +6469,34 @@ POWERSHELL
                 $targets[] = $this->joinPath($releaseReal, $relative);
             }
         }
+        $cleanupArtifacts = $installer['cleanup_artifacts'] ?? [];
+        if (is_array($cleanupArtifacts)) {
+            foreach ($cleanupArtifacts as $relative) {
+                if (!is_string($relative) || trim($relative) === '') {
+                    continue;
+                }
+                $normalized = str_replace('\\', '/', trim($relative));
+                if (
+                    str_starts_with($normalized, '/')
+                    || preg_match('/^[A-Za-z]:\//', $normalized) === 1
+                    || in_array('..', explode('/', $normalized), true)
+                ) {
+                    $skipped[] = [
+                        'path' => $relative,
+                        'reason' => 'declared cleanup artifact is not a safe relative path',
+                    ];
+                    continue;
+                }
+                if (strpos(strtolower($normalized), 'storage/') === 0) {
+                    $skipped[] = [
+                        'path' => $relative,
+                        'reason' => 'storage installer reports/manifests are retained for support diagnostics',
+                    ];
+                    continue;
+                }
+                $targets[] = $this->joinPath($releaseReal, str_replace('/', DIRECTORY_SEPARATOR, $normalized));
+            }
+        }
 
         $targets = array_values(array_unique($targets));
         usort($targets, static fn (string $left, string $right): int => strlen($right) <=> strlen($left));
@@ -6709,8 +6783,7 @@ POWERSHELL
 
     private function restartDataPrepHeartbeatServices(array $orderedApps, array $kitConfig, string $runDir): array
     {
-        $targetServiceIds = [
-            'pbb-relay-worker' => true,
+        $realtimeTargetServiceIds = [
             'pbb-realtime-websocket' => true,
             'pbb-realtime-media-dispatcher' => true,
         ];
@@ -6722,7 +6795,7 @@ POWERSHELL
             }
             foreach ($this->appRuntimeServices($appId, $app, $kitConfig) as $service) {
                 $serviceId = (string) ($service['id'] ?? '');
-                if (isset($targetServiceIds[$serviceId])) {
+                if ($appId === 'pbb-relay' || isset($realtimeTargetServiceIds[$serviceId])) {
                     $services[$serviceId] = $service;
                 }
             }
@@ -6755,7 +6828,7 @@ POWERSHELL
 
         return [
             'status' => count($errors) > 0 ? 'failed' : (count($warnings) > 0 ? 'warning' : 'success'),
-            'reason' => 'Refresh Maestro heartbeat emitters after Data Prep Apply Settings.',
+            'reason' => 'Refresh runtime services that consume Data Prep .env/config changes.',
             'runtime_services' => $results,
             'warnings' => $warnings,
             'errors' => $errors,
@@ -6945,14 +7018,35 @@ POWERSHELL
                 $maestroTelemetrySettings['ca_bundle'] = $caFile;
                 $maestroTelemetrySettings['curl_ca_bundle'] = $caFile;
             }
+            $mediaIngestSettings = [
+                'enabled' => true,
+                'project_codes' => [
+                    'prj_HOTLINE_SERVER',
+                    'prj_HOTLINE_CITIZEN',
+                    'prj_HOTLINE_OPERATOR',
+                ],
+                'base_url' => $this->appBaseUrlForDataPrep($kitConfig, $config, 'pbb-hotline', 'hotline', 'https://hotline.pbb.ph'),
+                'auth_header' => 'X-Realtime-Media-Ingest-Secret',
+                'tls_verify' => true,
+            ];
+            $mediaIngestSecret = trim((string) ($secrets['realtime_media_ingest_secret'] ?? ''));
+            if ($mediaIngestSecret !== '') {
+                $mediaIngestSettings['auth_token'] = $mediaIngestSecret;
+            }
+            if ($caFile !== '') {
+                $mediaIngestSettings['ca_bundle'] = $caFile;
+                $mediaIngestSettings['curl_ca_bundle'] = $caFile;
+            }
             $config['realtime']['data_prep']['apply_settings']['enabled'] = true;
             $config['realtime']['data_prep']['apply_settings']['maestro'] = $maestroTelemetrySettings;
+            $config['realtime']['data_prep']['apply_settings']['media_ingest'] = $mediaIngestSettings;
 
             if (!isset($config['realtime']['data_prep']['verify']) || !is_array($config['realtime']['data_prep']['verify'])) {
                 $config['realtime']['data_prep']['verify'] = [];
             }
             $config['realtime']['data_prep']['verify']['enabled'] = true;
             $config['realtime']['data_prep']['verify']['maestro'] = $maestroTelemetrySettings;
+            $config['realtime']['data_prep']['verify']['media_ingest'] = $mediaIngestSettings;
         }
 
         if (($app['id'] ?? '') === 'pbb-hotline') {
@@ -7467,8 +7561,79 @@ POWERSHELL
         if (($app['id'] ?? '') === 'pbb-hotline') {
             $result = $this->applyHotlineTlsConfig($result);
         }
+        if (($app['id'] ?? '') === 'pbb-relay') {
+            $result = $this->applyRelayHubIdentityConfig($result, $kitConfig);
+        }
 
         return $result;
+    }
+
+    private function applyRelayHubIdentityConfig(array $config, array $kitConfig): array
+    {
+        if (!isset($config['relay']) || !is_array($config['relay'])) {
+            $config['relay'] = [];
+        }
+
+        $hub = is_array($kitConfig['shared']['hub'] ?? null) ? $kitConfig['shared']['hub'] : [];
+        $hubConfig = is_array($kitConfig['hub'] ?? null) ? $kitConfig['hub'] : [];
+        $relayHubId = trim((string) ($hub['relay_hub_id'] ?? $kitConfig['kit']['node_id'] ?? ''));
+        $hqHubId = $hub['hub_id'] ?? $kitConfig['kit']['hub_record_id'] ?? $hubConfig['hub_id'] ?? null;
+        $hqBaseUrl = rtrim((string) ($hub['base_url'] ?? $hubConfig['base_url'] ?? $config['relay']['hq_api_base_url'] ?? 'https://hub.pbb.ph'), '/');
+
+        if ($relayHubId !== '') {
+            $config['relay']['hub_id'] = $relayHubId;
+        }
+        if ($hqHubId !== null && $hqHubId !== '') {
+            $config['relay']['hq_hub_id'] = $hqHubId;
+        }
+        if ($hqBaseUrl !== '') {
+            $config['relay']['hq_api_base_url'] = $hqBaseUrl;
+        }
+
+        $hubSnapshot = $this->publicHubSnapshot($hub, $hubConfig, $kitConfig);
+        if (count($hubSnapshot) > 0) {
+            $config['relay']['hub'] = $hubSnapshot;
+        }
+
+        $token = $this->getHubToken($hubConfig);
+        if ($token !== '') {
+            $config['relay']['hq_api_token'] = $token;
+        }
+
+        return $config;
+    }
+
+    private function publicHubSnapshot(array $hub, array $hubConfig, array $kitConfig): array
+    {
+        $baseUrl = rtrim((string) ($hub['base_url'] ?? $hubConfig['base_url'] ?? ''), '/');
+        $hubId = $hub['hub_id'] ?? $hub['id'] ?? $kitConfig['kit']['hub_record_id'] ?? $hubConfig['hub_id'] ?? null;
+        $relayHubId = trim((string) ($hub['relay_hub_id'] ?? $kitConfig['kit']['node_id'] ?? ''));
+        if ($hubId === null && $relayHubId === '' && $baseUrl === '') {
+            return [];
+        }
+
+        $locationCodes = is_array($kitConfig['kit']['location_codes'] ?? null) ? $kitConfig['kit']['location_codes'] : [];
+        $snapshot = [
+            'base_url' => $baseUrl !== '' ? $baseUrl : null,
+            'hub_id' => $hubId,
+            'relay_hub_id' => $relayHubId !== '' ? $relayHubId : null,
+            'name' => $hub['name'] ?? ($kitConfig['kit']['node_name'] ?? null),
+            'code' => $hub['code'] ?? null,
+            'deployment' => $hub['deployment'] ?? ($kitConfig['kit']['deployment'] ?? null),
+            'domain' => $hub['domain'] ?? ($kitConfig['kit']['domain'] ?? null),
+            'status' => $hub['status'] ?? null,
+            'country_code' => $hub['country_code'] ?? ($locationCodes['country_code'] ?? null),
+            'reg_code' => $hub['reg_code'] ?? ($locationCodes['reg_code'] ?? null),
+            'prov_code' => $hub['prov_code'] ?? ($locationCodes['prov_code'] ?? null),
+            'citymun_code' => $hub['citymun_code'] ?? ($locationCodes['citymun_code'] ?? null),
+            'brgy_code' => $hub['brgy_code'] ?? ($locationCodes['brgy_code'] ?? null),
+            'uplinks' => $this->redactInstallStateHubList($hub['uplinks'] ?? []),
+            'sources' => $this->redactInstallStateHubList($hub['sources'] ?? []),
+        ];
+
+        return array_filter($snapshot, static function ($value): bool {
+            return $value !== null && $value !== '';
+        });
     }
 
     private function applySharedInstallDefaults(array $config, array $app): array
@@ -8337,15 +8502,21 @@ POWERSHELL
             if (!is_array($item)) {
                 continue;
             }
-            $clean = $item;
-            foreach (array_keys($clean) as $key) {
-                if (preg_match('/token|secret|password|private[_-]?key/i', (string) $key) === 1) {
-                    unset($clean[$key]);
-                }
-            }
-            $result[] = $clean;
+            $result[] = $this->redactSensitiveHubValue($item);
         }
         return $result;
+    }
+
+    private function redactSensitiveHubValue(array $value): array
+    {
+        $clean = [];
+        foreach ($value as $key => $item) {
+            if (preg_match('/token|secret|password|private[_-]?key/i', (string) $key) === 1) {
+                continue;
+            }
+            $clean[$key] = is_array($item) ? $this->redactSensitiveHubValue($item) : $item;
+        }
+        return $clean;
     }
 
     private function installStateApps(array $config, array $finishReport): array

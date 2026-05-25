@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "generated_for": "stub app local harness",
+  "packages": [
+    {
+      "app_id": "pbb-stub",
+      "version": "0.1.0",
+      "source_type": "directory",
+      "path": "C:\\wamp64\\www\\pbb\\kit-setup\\fixtures\\stub-app-release",
+      "trusted": true,
+      "signature_status": "local-trusted"
+    }
+  ]
+}

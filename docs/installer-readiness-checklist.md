@@ -1,6 +1,6 @@
 # PBB Installer Readiness Checklist
 
-Last updated: 2026-05-15 18:40 Asia/Manila
+Last updated: 2026-05-24 05:20 Asia/Manila
 
 This checklist tracks where each project is against the Kit Setup app-installer contract in [App Installer Template](app-installer-template.md).
 
@@ -22,7 +22,7 @@ Sources used:
 
 | Project | Current Status | Local Contract Files | Recent Chat Signal | Next Gate |
 |---|---:|---:|---|---|
-| Kit Setup | Ready for harness | Yes | Finish report added at 2026-05-15 20:00 | Add final smoke checks, live DNS verification, credential checks, and web-server reload checks |
+| Kit Setup | Ready for harness | Yes | Desktop finish flow and runtime service/smoke orchestration are implemented | Keep package manifests current, test clean-node installs, and harden production signing/release workflow |
 | PBB MapServer | Ready for harness | Yes | Kit population dry-run passed at 2026-05-15 16:35 | Run tiny live fetch through Kit Setup when upstream config is available |
 | PBB Realtime | Ready for harness | Yes | Kit population dry-run passed at 2026-05-15 16:35 | Run disposable install path |
 | PBB Relay | Ready for harness | Yes | Kit preflight passed at 2026-05-15 16:25 | Run against generated compact Relay build output |
@@ -81,15 +81,15 @@ Pending:
 - [x] Release ZIP staging and safe target deployment support
 - [x] Cryptographic signature verification for release ZIPs
 - [x] Checksum verification
-- [~] Service artifact collection/registration
+- [x] Service artifact collection/registration through Kit-managed WinSW runtime services
 - [x] Guarded Technitium DNS API apply
 - [x] Live DNS verification from the installer host
 - [x] Remote dependency runtime credential validation
 - [x] Population tool discovery from `release.json`
 - [x] Population tool config/report orchestration
 - [x] SSL certificate/key validation, guarded PEM extraction, and guarded Apache vhost include generation/apply
-- [~] Apache config test after guarded vhost apply
-- [~] Desktop export packaging
+- [x] Apache config test after guarded vhost apply
+- [x] Desktop unpacked export packaging
 - [x] Cross-app final smoke checks
 - [ ] Protected secret persistence outside transient run storage
 

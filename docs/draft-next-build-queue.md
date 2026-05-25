@@ -185,6 +185,14 @@ Status: living checklist for items discussed during installer testing. Do not tr
 
 ## Built / Released
 
+- [x] `0.1.118` release candidate.
+  - Installer artifact: `out\Project Bantay Bayan Setup 0.1.118.exe`.
+  - SHA256: `6CA2B316D242230AC76B84A00CEE7EF9971DE33BFA619F53C12EDA085BD37C8D`.
+  - Setup mode keeps the pre-admin Startup Requirements gate for WAMPServer and Technitium.
+  - Start Installation does not force the startup gate to rerun.
+  - The hidden Windows DNS Server field is auto-filled from the discovered Technitium IPv4 when the visible Technitium URL is a domain such as `http://dns.pbb.ph:5380`.
+  - Data Prep mode hides the Startup Requirements gate and relies on the completed setup state.
+
 - [x] `0.1.57` correction build.
   - Removed duplicate legacy admin inputs.
   - Fixed automated install action modal handling.

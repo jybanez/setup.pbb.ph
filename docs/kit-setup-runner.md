@@ -242,7 +242,7 @@ storage/runs/{run-id}/
 `-- logs/
 ```
 
-Each app entry in `kit-report.json` includes the generated config path, report path, checksum verification result, release metadata, installer command output, and any collected app artifacts.
+Each app entry in `kit-report.json` includes the generated config path, report path, checksum verification result, release metadata, installer command output, runtime service declarations, status command output, install manifest data when available, and any collected app artifacts.
 
 Each action also updates:
 
@@ -254,7 +254,7 @@ The checkpoint file records the latest status and report path per action. Reusin
 
 When `--app` is used with an app action, the checkpoint records `app_filter` and only that app appears in the generated `kit-report.json`.
 
-The runner does not yet register services or perform cross-app HTTP smoke checks. Those are next layers after the installer harness and app contracts stabilize.
+Runtime service and smoke-check orchestration are now first-class runner actions. `service-plan`, `service-start`, `service-stop`, and `service-verify` collect app-declared `runtime_services`, prepare Kit-managed WinSW services on Windows, start or stop those services, and verify declared health checks. `smoke-check` verifies final app URL reachability and app-declared smoke requirements, including Realtime websocket proxy checks when release metadata provides `web_server.requirements[].smoke_test`.
 
 ## First Admin Password
 
@@ -585,3 +585,5 @@ It exists so Kit Setup can be developed before the real app installers are ready
 ```powershell
 php installer/install-run.php --mode preflight --config path\to\app.config.json --report path\to\app.report.json
 ```
+
+The checked-in `examples/kit-config.stub.json` points at the stub release directory and `packages/packages.stub-local.example.json`, so it can run app-contract actions and non-mutating planner actions such as `plan`, `preflight`, and `stage-report` without generated ZIP fixtures. Use `examples/kit-config.stub-archive.example.json` when specifically testing signed archive extraction and deployment.

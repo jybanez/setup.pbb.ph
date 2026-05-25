@@ -25,6 +25,7 @@ const state = {
   existingInstallReport: null,
   windowsInstallerReport: null,
   technitiumDiscovery: null,
+  prerequisiteGate: null,
   diskSpaceReport: null,
   enforceTechnitiumRequirement: false,
   enforceDiskSpaceRequirement: false,
@@ -112,6 +113,11 @@ const elements = {
   overallInstallProgressPercent: document.getElementById('overallInstallProgressPercent'),
   overallInstallProgressBar: document.getElementById('overallInstallProgressBar'),
   setupWorkflowStepper: document.getElementById('setupWorkflowStepper'),
+  prerequisiteGatePanel: document.getElementById('prerequisiteGatePanel'),
+  prerequisiteGateStatus: document.getElementById('prerequisiteGateStatus'),
+  prerequisiteGateGrid: document.getElementById('prerequisiteGateGrid'),
+  prerequisiteGateMessage: document.getElementById('prerequisiteGateMessage'),
+  rerunPrerequisiteGateButton: document.getElementById('rerunPrerequisiteGateButton'),
   adminPropertyEditor: document.getElementById('adminPropertyEditor'),
   existingInstallPanel: document.getElementById('existingInstallPanel'),
   existingInstallSummary: document.getElementById('existingInstallSummary'),
@@ -236,6 +242,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     return;
   }
   renderAdminPropertyEditor();
+  await refreshPrerequisiteGate();
   await refreshTechnitiumDiscovery({ prefill: true });
   await refreshExistingInstallDiscovery();
   await refreshWindowsInstallerDiscovery();
@@ -259,6 +266,9 @@ function applyLaunchMode(mode) {
       elements.stageTitle.textContent = 'Data Prep';
     }
     state.selectedStageIndex = 10;
+    if (elements.prerequisiteGatePanel) {
+      elements.prerequisiteGatePanel.hidden = true;
+    }
     if (elements.dataPrepPanel) {
       elements.dataPrepPanel.hidden = false;
     }
@@ -266,6 +276,9 @@ function applyLaunchMode(mode) {
     return;
   }
   document.body.classList.remove('data-prep-mode');
+  if (elements.prerequisiteGatePanel) {
+    elements.prerequisiteGatePanel.hidden = false;
+  }
   document.title = 'Project Bantay Bayan Setup';
   elements.appModeTitle.textContent = 'Setup';
   elements.appModeSubtitle.textContent = 'Node installer';
@@ -300,6 +313,9 @@ function bindEvents() {
     runAction('stage-report');
   });
   elements.runAutomatedInstallButton?.addEventListener('click', () => runAutomatedInstall());
+  elements.rerunPrerequisiteGateButton?.addEventListener('click', async () => {
+    await refreshPrerequisiteGate({ force: true });
+  });
   elements.startDataPrepButton?.addEventListener('click', () => runAutomatedDataPrep());
   elements.confirmCancelButton.addEventListener('click', () => closeConfirmation());
   elements.confirmCheckbox.addEventListener('change', () => {
@@ -385,6 +401,8 @@ function renderAdminPropertyEditor() {
   if (!elements.adminPropertyEditor || !state.helperFactories.propertyEditor) {
     return;
   }
+  const scrollHost = document.scrollingElement || document.documentElement;
+  const priorScrollTop = scrollHost ? scrollHost.scrollTop : 0;
   destroyPathPickers();
   state.adminPropertyEditor?.destroy?.();
   elements.adminPropertyEditor.innerHTML = '';
@@ -404,6 +422,11 @@ function renderAdminPropertyEditor() {
   });
   renderAdminPathPickers();
   document.body.classList.add('has-admin-property-editor');
+  if (scrollHost && priorScrollTop > 0) {
+    requestAnimationFrame(() => {
+      scrollHost.scrollTop = priorScrollTop;
+    });
+  }
 }
 
 function buildAdminPropertyEditorData() {
@@ -591,7 +614,9 @@ function renderAdminPathPickers() {
           state.templateConfigPath = value;
         }
         renderActiveStageValidation();
-        scheduleExistingInstallDiscovery({ rerender: config.id === 'basePath' });
+        if (config.id === 'basePath') {
+          scheduleExistingInstallDiscovery({ rerender: true });
+        }
       }
     });
     const browse = host.querySelector('.ui-path-picker-browse');
@@ -702,6 +727,7 @@ function scheduleExistingInstallDiscovery(options = {}) {
     await Promise.all([
       refreshExistingInstallDiscovery(),
       refreshTechnitiumDiscovery({ prefill: true }),
+      refreshPrerequisiteGate(),
       refreshDiskSpaceEstimate()
     ]);
     if (options.rerender) {
@@ -874,6 +900,7 @@ function collectSetupForm() {
     dnsZone: elements.dnsZoneInput.value,
     applyDns: elements.applyDnsInput.checked,
     dnsClientNameserver: elements.dnsClientNameserverInput.value,
+    technitiumResolvedIp: technitiumResolvedIp(),
     dnsClientInterfaceAlias: elements.dnsClientInterfaceInput.value,
     applyDnsClient: elements.applyDnsClientInput.checked,
     certRoot: elements.certRootInput.value,
@@ -890,6 +917,10 @@ function collectSetupForm() {
     appScopes: collectAppScopes(),
     appInstallDecisions: collectAppInstallDecisions()
   };
+}
+
+function technitiumResolvedIp() {
+  return firstTechnitiumIpv4Candidate();
 }
 
 function collectAppInstallDecisions() {
@@ -986,7 +1017,7 @@ async function refreshTechnitiumDiscovery(options = {}) {
   try {
     const report = await window.kitSetup.detectTechnitium({ form: collectSetupForm() });
     state.technitiumDiscovery = report;
-    if (options.prefill && report?.status === 'success' && shouldPrefillTechnitiumUrl()) {
+    if (options.prefill && report?.status === 'success' && shouldPrefillTechnitiumUrl() && elements.technitiumBaseUrlInput.value !== report.url) {
       elements.technitiumBaseUrlInput.value = report.url;
       renderAdminPropertyEditor();
     }
@@ -997,6 +1028,124 @@ async function refreshTechnitiumDiscovery(options = {}) {
     renderActiveStageValidation();
     return state.technitiumDiscovery;
   }
+}
+
+async function refreshPrerequisiteGate(options = {}) {
+  if (!window.kitSetup.inspectPrerequisites) {
+    state.prerequisiteGate = {
+      status: 'failed',
+      errors: ['This setup build does not expose prerequisite inspection.']
+    };
+    renderPrerequisiteGate();
+    return state.prerequisiteGate;
+  }
+  state.prerequisiteGate = state.prerequisiteGate && !options.force
+    ? { ...state.prerequisiteGate, checking: true }
+    : { status: 'checking', checking: true };
+  renderPrerequisiteGate();
+  try {
+    const report = await window.kitSetup.inspectPrerequisites({ form: collectSetupForm() });
+    state.prerequisiteGate = report;
+    if (
+      report?.status === 'success'
+      && report.technitium?.url
+      && shouldPrefillTechnitiumUrl()
+      && elements.technitiumBaseUrlInput.value !== report.technitium.url
+    ) {
+      elements.technitiumBaseUrlInput.value = report.technitium.url;
+      renderAdminPropertyEditor();
+    }
+  } catch (error) {
+    state.prerequisiteGate = {
+      status: 'failed',
+      errors: [error.message],
+      message: error.message
+    };
+  }
+  renderPrerequisiteGate();
+  renderActiveStageValidation();
+  return state.prerequisiteGate;
+}
+
+function renderPrerequisiteGate() {
+  if (!elements.prerequisiteGatePanel) {
+    return;
+  }
+  if (state.launchMode === 'data-prep') {
+    elements.prerequisiteGatePanel.hidden = true;
+    return;
+  }
+  const report = state.prerequisiteGate || { status: 'checking', checking: true };
+  const status = report.checking ? 'pending' : (report.status === 'success' ? 'success' : 'failed');
+  const ready = report.status === 'success' && !report.checking;
+  elements.prerequisiteGateStatus.textContent = report.checking ? 'Checking' : (ready ? 'Ready' : 'Blocked');
+  elements.prerequisiteGateStatus.className = `status-pill ${status}`;
+  const setupForm = document.querySelector('.setup-form');
+  if (setupForm) {
+    setupForm.hidden = !ready;
+  }
+  elements.prerequisiteGatePanel.classList.toggle('success', ready);
+  elements.prerequisiteGatePanel.classList.toggle('failed', !ready && !report.checking);
+  elements.prerequisiteGateMessage.textContent = ready
+    ? 'Startup requirements passed. Admin inputs are now available.'
+    : (report.errors && report.errors.length > 0
+      ? report.errors[0]
+      : 'WAMPServer on this machine and Technitium at dns.pbb.ph are required for automated setup.');
+  elements.prerequisiteGateGrid.innerHTML = '';
+  for (const item of prerequisiteGateItems(report)) {
+    const row = document.createElement('div');
+    row.className = `prerequisite-gate-item ${item.status || 'pending'}`;
+    row.innerHTML = `
+      <span>${escapeHtml(item.label)}</span>
+      <strong>${escapeHtml(item.value || 'Checking')}</strong>
+      <small>${escapeHtml(item.detail || '')}</small>
+    `;
+    elements.prerequisiteGateGrid.appendChild(row);
+  }
+}
+
+function prerequisiteGateItems(report) {
+  if (!report || report.checking || report.status === 'checking') {
+    return [
+      { label: 'WAMP root', value: 'C:\\wamp64', detail: 'checking', status: 'pending' },
+      { label: 'Apache', value: 'httpd.exe', detail: 'checking', status: 'pending' },
+      { label: 'MySQL/MariaDB', value: 'mysql.exe', detail: 'checking', status: 'pending' },
+      { label: 'Technitium DNS', value: 'http://dns.pbb.ph:5380', detail: 'checking', status: 'pending' }
+    ];
+  }
+  const wamp = report?.wamp || {};
+  const technitium = report?.technitium || {};
+  const wampChecks = Array.isArray(wamp.checks) ? wamp.checks : [];
+  const checkById = new Map(wampChecks.map((check) => [check.id, check]));
+  const serviceText = (check) => [check?.service_name, check?.state].filter(Boolean).join(' ');
+  return [
+    {
+      label: 'WAMP root',
+      value: checkById.get('wamp_root')?.path || wamp.root || 'C:\\wamp64',
+      detail: checkById.get('wamp_root')?.status === 'success' ? 'found' : 'missing',
+      status: checkById.get('wamp_root')?.status || 'pending'
+    },
+    {
+      label: 'Apache',
+      value: checkById.get('apache_binary')?.path || wamp.apache_binary || '',
+      detail: serviceText(checkById.get('apache_service')),
+      status: checkById.get('apache_binary')?.status === 'success' && checkById.get('apache_service')?.status === 'success' ? 'success' : 'failed'
+    },
+    {
+      label: 'MySQL/MariaDB',
+      value: checkById.get('mysql_binary')?.path || wamp.mysql_binary || '',
+      detail: serviceText(checkById.get('database_service')),
+      status: checkById.get('mysql_binary')?.status === 'success' && checkById.get('database_service')?.status === 'success' ? 'success' : 'failed'
+    },
+    {
+      label: 'Technitium DNS',
+      value: technitium.url || 'http://dns.pbb.ph:5380',
+      detail: technitium.resolved_ips?.length
+        ? `resolved ${technitium.resolved_ips.join(', ')}`
+        : (technitium.status === 'success' ? 'HTTP reachable; resolver did not return an IP' : 'dns.pbb.ph not resolved'),
+      status: technitium.status || 'pending'
+    }
+  ];
 }
 
 function shouldPrefillTechnitiumUrl() {
@@ -1113,7 +1262,20 @@ async function runAutomatedInstall() {
   }
   resetAutomatedProgress();
   updateAutomatedProgress('inputs', 0, 'current', 'Confirm administrator inputs');
+  if (state.prerequisiteGate?.status !== 'success') {
+    await handleValidationBlock(
+      'Cannot run automated install',
+      validationIssue(
+        'Startup requirements must pass before setup can continue.',
+        '',
+        'Start WAMPServer on this machine and make sure dns.pbb.ph reaches Technitium, then click Check Again.'
+      )
+    );
+    updateAutomatedProgress('inputs', 0, 'failed', 'Startup requirements blocked setup');
+    return;
+  }
   await refreshTechnitiumDiscovery({ prefill: true });
+  ensureDnsClientNameserverDefault();
   await refreshExistingInstallDiscovery();
   await refreshWindowsInstallerDiscovery();
   await refreshDiskSpaceEstimate();
@@ -3810,6 +3972,13 @@ function validateStage(step) {
   };
 
   if (step === 1) {
+    if (state.prerequisiteGate?.status !== 'success') {
+      fail(
+        'Startup requirements must pass before Admin Inputs are available.',
+        '',
+        'Start WAMPServer on this machine and make sure dns.pbb.ph reaches Technitium, then click Check Again.'
+      );
+    }
     if (cleanValue(elements.phpPathInput.value) === '') {
       fail('Select the PHP runtime path.', 'phpPath');
     }
@@ -3895,12 +4064,12 @@ function validateStage(step) {
       fail('Enter the Technitium token before enabling DNS apply.', 'technitiumToken');
     }
     if (elements.applyDnsClientInput.checked) {
-      const targetDns = cleanValue(elements.dnsClientNameserverInput.value) || hostFromUrl(elements.technitiumBaseUrlInput.value);
+      const targetDns = dnsClientTargetNameserver();
       if (!looksLikeIpv4(targetDns)) {
         fail(
           'Enter the Windows DNS server IPv4 address, or use a Technitium URL with an IPv4 host.',
           'dnsClientNameserver',
-          'Fill Windows DNS Server with an IPv4 address such as 192.168.254.192, or change Technitium URL so its host is an IPv4 address.'
+          'Fill Windows DNS Server with an IPv4 address such as 192.168.254.192, or use a Technitium URL that the startup gate resolved to an IPv4 address.'
         );
       }
     }
@@ -4064,6 +4233,60 @@ function looksLikeIpv4(value) {
     return false;
   }
   return text.split('.').every((part) => Number(part) >= 0 && Number(part) <= 255);
+}
+
+function dnsClientTargetNameserver() {
+  const explicit = cleanValue(elements.dnsClientNameserverInput.value);
+  if (explicit !== '') {
+    return explicit;
+  }
+  const discovered = firstTechnitiumIpv4Candidate();
+  if (discovered) {
+    return discovered;
+  }
+  return hostFromUrl(elements.technitiumBaseUrlInput.value);
+}
+
+function firstTechnitiumIpv4Candidate() {
+  const resolved = Array.isArray(state.prerequisiteGate?.technitium?.resolved_ips)
+    ? state.prerequisiteGate.technitium.resolved_ips.find(looksLikeIpv4)
+    : '';
+  if (resolved) {
+    return resolved;
+  }
+  const remoteAddress = cleanValue(state.prerequisiteGate?.technitium?.probe?.remote_address);
+  if (looksLikeIpv4(remoteAddress)) {
+    return remoteAddress;
+  }
+  const discoveryRemoteAddress = cleanValue(state.technitiumDiscovery?.remote_address);
+  if (looksLikeIpv4(discoveryRemoteAddress)) {
+    return discoveryRemoteAddress;
+  }
+  const discoveryResolved = Array.isArray(state.technitiumDiscovery?.resolved_ips)
+    ? state.technitiumDiscovery.resolved_ips.find(looksLikeIpv4)
+    : '';
+  if (discoveryResolved) {
+    return discoveryResolved;
+  }
+  const discoveredFromCandidates = Array.isArray(state.technitiumDiscovery?.candidates)
+    ? state.technitiumDiscovery.candidates
+      .flatMap((candidate) => [
+        cleanValue(candidate?.remote_address),
+        ...(Array.isArray(candidate?.resolved_ips) ? candidate.resolved_ips : [])
+      ])
+      .find(looksLikeIpv4)
+    : '';
+  return discoveredFromCandidates || '';
+}
+
+function ensureDnsClientNameserverDefault() {
+  if (!elements.applyDnsClientInput.checked || cleanValue(elements.dnsClientNameserverInput.value) !== '') {
+    return;
+  }
+  const target = firstTechnitiumIpv4Candidate();
+  if (target) {
+    elements.dnsClientNameserverInput.value = target;
+  }
 }
 
 function hostFromUrl(value) {

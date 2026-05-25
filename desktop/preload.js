@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('kitSetup', {
   validatePath: (request) => ipcRenderer.invoke('kit:validate-path', request),
   detectLocalIp: () => ipcRenderer.invoke('kit:detect-local-ip'),
   detectTechnitium: (request) => ipcRenderer.invoke('kit:detect-technitium', request),
+  inspectPrerequisites: (request) => ipcRenderer.invoke('kit:inspect-prerequisites', request),
   inspectExistingInstalls: (request) => ipcRenderer.invoke('kit:inspect-existing-installs', request),
   inspectWindowsInstaller: () => ipcRenderer.invoke('kit:inspect-windows-installer'),
   getInstallState: () => ipcRenderer.invoke('kit:get-install-state'),

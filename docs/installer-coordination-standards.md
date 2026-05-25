@@ -193,7 +193,7 @@ Installer status:
 - Has release-installer planning doc:
   - `docs/pbb-github-release-installer-plan.md`
 - Direction is GitHub Releases with versioned archives, `release.json`, checksums, dependency constraints, install notes, and a predictable contract for an ecosystem installer.
-- App-level installer is planned but not yet as implemented as Realtime.
+- Exposes the Kit-facing release metadata, unattended installer entrypoint, status command, schema, checksum coverage, runtime service declarations, and population tool expected by current Kit Setup harness runs.
 
 Runtime commands and services:
 

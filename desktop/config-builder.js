@@ -34,7 +34,7 @@ function buildRuntimeConfig(template, form) {
   setNestedValue(config, ['dns', 'zone'], cleanString(form.dnsZone) || getNestedValue(config, ['dns', 'zone']) || 'pbb.ph');
   setNestedValue(config, ['dns', 'token_env'], 'PBB_TECHNITIUM_TOKEN');
   setNestedValue(config, ['dns', 'update_mode'], form.applyDns === true ? 'apply' : 'plan-only');
-  setNestedValue(config, ['dns', 'client_nameserver'], cleanString(form.dnsClientNameserver) || '');
+  setNestedValue(config, ['dns', 'client_nameserver'], cleanString(form.dnsClientNameserver) || cleanString(form.technitiumResolvedIp) || '');
   setNestedValue(config, ['dns', 'client_interface_alias'], cleanString(form.dnsClientInterfaceAlias) || '');
   setNestedValue(config, ['dns', 'client_update_mode'], form.applyDnsClient === true ? 'apply' : 'plan-only');
 

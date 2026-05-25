@@ -496,6 +496,109 @@ button:disabled {
   margin-bottom: 16px;
 }
 
+.setup-form[hidden] {
+  display: none;
+}
+
+.prerequisite-gate {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.prerequisite-gate.success {
+  border-color: rgba(74, 209, 119, 0.58);
+}
+
+.prerequisite-gate.failed {
+  border-color: rgba(244, 193, 79, 0.58);
+}
+
+.prerequisite-gate-header,
+.prerequisite-gate-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+}
+
+.prerequisite-gate-header {
+  border-bottom: 1px solid var(--line);
+}
+
+.prerequisite-gate-header h3,
+.prerequisite-gate-actions p {
+  margin: 0;
+}
+
+.prerequisite-gate-header h3 {
+  font-size: 18px;
+}
+
+.prerequisite-gate-actions {
+  border-top: 1px solid var(--line);
+}
+
+.prerequisite-gate-actions p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.prerequisite-gate-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px;
+}
+
+.prerequisite-gate-item {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  min-height: 86px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b1424;
+}
+
+.prerequisite-gate-item.success {
+  border-color: rgba(74, 209, 119, 0.58);
+}
+
+.prerequisite-gate-item.failed {
+  border-color: rgba(244, 193, 79, 0.68);
+}
+
+.prerequisite-gate-item span,
+.prerequisite-gate-item strong,
+.prerequisite-gate-item small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prerequisite-gate-item span {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+
+.prerequisite-gate-item strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.prerequisite-gate-item small {
+  color: #bac9e8;
+  font-size: 12px;
+}
+
 .admin-property-editor {
   margin-bottom: 14px;
 }
@@ -886,6 +989,7 @@ body.troubleshooting-visible .command-panel {
 }
 
 .data-prep-mode .setup-form,
+.data-prep-mode .prerequisite-gate,
 .data-prep-mode .existing-install-panel,
 .data-prep-mode .package-progress-panel,
 .data-prep-mode .workflow-stepper {
