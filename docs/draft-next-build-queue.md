@@ -185,6 +185,19 @@ Status: living checklist for items discussed during installer testing. Do not tr
 
 ## Built / Released
 
+- [x] `0.1.121` release candidate rebuild.
+  - Embeds production-pruned app bundles for Maestro, Realtime, Relay, and Hotline.
+  - Hotline bundle sha256: `1531b3ccb7c22d71c8b588a2599e5eaf8ce182c0b9d711ebc3617128e636307f`.
+  - Superseded by `0.1.122` for the MapServer province-pack build.
+- [x] `0.1.122` release candidate rebuild.
+  - Embeds MapServer's small app/runtime bundle without the national boundary ZIP.
+  - Embeds Cebu province boundary pack `pbb-mapserver-boundaries-province-0722.zip`.
+  - Installer artifact: `out\Project Bantay Bayan Setup 0.1.122.exe`.
+  - Hotline build id: `pbb-hotline-5.6.1-20260527-ffprobe-optional`.
+  - Realtime bundle sha256: `9ad22fb025bb782f33a644a350bde9ea28d5926fe859929d52e5402d860d2ceb`.
+  - Maestro bundle sha256: `576c18dadde34c8101a49f90d0ef81a10f40146eb26439a22b283d1db4e2193a`.
+  - Relay bundle sha256: `314e452e3f9dfcfc2cac23b563ad69d0379f7e130ada332c6ce28775bb5f8f88`.
+
 - [x] `0.1.120` release candidate rebuild.
   - Embeds final Hotline bundle `pbb-hotline-5.6.1.zip` for SITREP group presets.
   - Hotline bundle sha256: `1be24b85cd54a849d2048df57efe929483e7df3d07826ddaf44bfd9038740abd`.

@@ -361,6 +361,8 @@ Signed archive entries use detached OpenSSL SHA-256 signatures:
 
 For archive packages with `packages.dry_run=false`, Kit Setup extracts the ZIP into `storage/runs/{run-id}/packages/{app}`, verifies `release.json` and `checksums.sha256` after extraction, backs up an existing target under `storage/runs/{run-id}/package-backups`, and copies the verified package into the target path. Package work is bounded-parallel by default with `packages.max_parallel=3` and a hard cap of 5. Each app still uses its own staging/report path, and the parent `package-report.json` aggregates the per-app worker results. Deployment is refused when the target is outside the configured Kit install roots.
 
+Manifest entries may declare `supplemental_packages` for trusted app-owned payloads that should be extracted into the installed app after the main package deploys. Kit verifies each supplemental ZIP's SHA-256 before extraction and records the result under the app's `supplemental_packages` report block. The first use is MapServer province boundary packs, for example `pbb-mapserver-boundaries-province-0722.zip`, which installs under `resources/boundaries/provinces/0722/`.
+
 ## DNS Plan
 
 `dns-plan` derives local DNS records from selected local apps, configured standard domains, and `machine.ip_address`.

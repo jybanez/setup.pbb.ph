@@ -66,7 +66,7 @@ The shell does not duplicate installer logic. It calls the PHP runner actions an
 Current release-candidate build:
 
 ```text
-Project Bantay Bayan Setup 0.1.120.exe
+Project Bantay Bayan Setup 0.1.122.exe
 ```
 
 Behavior locked for this candidate:
@@ -75,7 +75,7 @@ Behavior locked for this candidate:
 - Setup mode keeps the gate result until the operator clicks `Check Again`; Start Installation does not force a gate rerun.
 - `http://dns.pbb.ph:5380` may remain the Technitium URL, but the Windows DNS client target is resolved/probed to an IPv4 address before validation.
 - Data Prep mode hides the Startup Requirements gate and is gated only by the completed Kit Setup state.
-- v1-0.1.120 embeds the refreshed Hotline `5.6.1` same-version rebuild with build id `pbb-hotline-5.6.1-20260527-sitrep-group-presets`.
+- v1-0.1.122 embeds the production-pruned app bundles for Maestro, Realtime, Relay, and Hotline, plus MapServer's small runtime bundle with the Cebu province boundary pack.
 
 ## Confirmation Gates
 
@@ -180,6 +180,8 @@ npm run package:desktop:win
 ```
 
 Production installer output uses the Project Bantay Bayan branding and bundled trusted app packages. Code-signing certificate procurement is still a release-management task.
+
+Before running a release build, complete [Pre-Build Verification Checklist](pre-build-verification-checklist.md). In particular, verify that every production-pruned app bundle still matches its installer behavior; excluded seeders, factories, test fixtures, or optional binaries must not be required by fresh install commands.
 
 ## Backend Contract
 

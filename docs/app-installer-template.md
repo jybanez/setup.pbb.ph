@@ -72,6 +72,8 @@ Laravel-style app packages must include `public/.htaccess`. Kit Setup uses Apach
 
 For Laravel apps, app bundles should prefer including `vendor/` and production frontend assets for offline-friendly hub installation. If dependencies are intentionally not bundled, `release.json` must declare the required install-time build commands.
 
+Laravel-style bundles that include `vendor/` must package production dependencies only. Build from a temporary packaging stage and install Composer dependencies with the equivalent of `composer install --no-dev --optimize-autoloader`; do not zip a local development checkout with dev packages. See [App Bundle Packaging Standard](app-bundle-packaging-standard.md).
+
 ## `release.json`
 
 Every bundle must include `release.json` at the archive root.

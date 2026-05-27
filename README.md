@@ -8,13 +8,16 @@ The intent is not to replace each app's own installer. Each PBB app should ship 
 
 Start here:
 
-- [Release Candidate v1-0.1.120](docs/release-candidate-v1-0.1.120.md)
+- [Official Release v1-0.1.124](docs/release-v1-0.1.124.md)
+- [Release Candidate v1-0.1.124](docs/release-candidate-v1-0.1.124.md)
+- [Pre-Build Verification Checklist](docs/pre-build-verification-checklist.md)
 - [Non-Technical Install Flow](docs/non-technical-install-flow.md)
 - [Implementation Decisions](docs/implementation-decisions.md)
 - [Desktop Installer Shell](docs/desktop-installer-shell.md)
 - [Implementation Checklist](docs/implementation-checklist.md)
 - [External Machine Dry Run](docs/external-machine-dry-run.md)
 - [Installer Coordination Standards](docs/installer-coordination-standards.md)
+- [App Bundle Packaging Standard](docs/app-bundle-packaging-standard.md)
 - [App Installer Template](docs/app-installer-template.md)
 - [Installer Readiness Checklist](docs/installer-readiness-checklist.md)
 - [Kit Setup Runner](docs/kit-setup-runner.md)

@@ -1,52 +1,64 @@
 {
-  "schema_version": 1,
-  "generated_for": "Project Bantay Bayan bundled app packages",
-  "generated_at": "2026-05-27T15:13:45+08:00",
-  "packages": [
-    {
-      "app_id": "pbb-mapserver",
-      "version": "1.0.0",
-      "source_type": "zip",
-      "path": "bundled/pbb-mapserver-1.0.0.zip",
-      "sha256": "98b4a017686817d1ce94e316fd22de34214a8b6ced4ec68e032c1e54ee988d2f",
-      "trusted": true,
-      "signature_status": "local-trusted"
-    },
-    {
-      "app_id": "pbb-maestro",
-      "version": "1.0.0",
-      "source_type": "zip",
-      "path": "bundled/pbb-maestro-1.0.0.zip",
-      "sha256": "2197a2c9f16794bdda8ddacb586892378e2c29fcf6534121c6bec076156ba607",
-      "trusted": true,
-      "signature_status": "local-trusted"
-    },
-    {
-      "app_id": "pbb-realtime",
-      "version": "1.0.0",
-      "source_type": "zip",
-      "path": "bundled/pbb-realtime-1.0.0.zip",
-      "sha256": "450cda90661c6d1150aa3d5dfd3d1ac59b5df20704c086ddb7855ed8435f61b8",
-      "trusted": true,
-      "signature_status": "local-trusted"
-    },
-    {
-      "app_id": "pbb-relay",
-      "version": "1.1.0",
-      "source_type": "zip",
-      "path": "bundled/pbb-relay-1.1.0.zip",
-      "sha256": "a9b4e42d32b8f399a7c85a3b532171e316fc8dd43d0b4b4e9083efb6f56eadd8",
-      "trusted": true,
-      "signature_status": "local-trusted"
-    },
-    {
-      "app_id": "pbb-hotline",
-      "version": "5.6.1",
-      "source_type": "zip",
-      "path": "bundled/pbb-hotline-5.6.1.zip",
-      "sha256": "1be24b85cd54a849d2048df57efe929483e7df3d07826ddaf44bfd9038740abd",
-      "trusted": true,
-      "signature_status": "local-trusted"
-    }
-  ]
+    "schema_version": 1,
+    "generated_for": "Project Bantay Bayan bundled app packages",
+    "generated_at": "2026-05-27T20:02:00+08:00",
+    "packages": [
+        {
+            "app_id": "pbb-mapserver",
+            "version": "1.0.0",
+            "source_type": "zip",
+            "path": "bundled/pbb-mapserver-1.0.0.zip",
+            "sha256": "b651e77701861c07ab50420d1b102d7da0a6af73856e8b93e23063fad9459642",
+            "trusted": true,
+            "signature_status": "local-trusted",
+            "supplemental_packages": [
+                {
+                    "id": "mapserver-boundaries-province-0722",
+                    "kind": "mapserver-boundary-province-pack",
+                    "province_code": "0722",
+                    "path": "bundled/pbb-mapserver-boundaries-province-0722.zip",
+                    "sha256": "1e314649821540bfa68abf3294d23615eaf91dd64e6c2e66bbac21d24a0797b6",
+                    "trusted": true,
+                    "signature_status": "local-trusted",
+                    "install_mode": "extract-into-app"
+                }
+            ]
+        },
+        {
+            "app_id": "pbb-maestro",
+            "version": "1.0.0",
+            "source_type": "zip",
+            "path": "bundled/pbb-maestro-1.0.0.zip",
+            "sha256": "77cfa366d2ac3a6ca8e96e8f64000306f08f2c41ee334a549a073544f851e790",
+            "trusted": true,
+            "signature_status": "local-trusted"
+        },
+        {
+            "app_id": "pbb-realtime",
+            "version": "1.0.0",
+            "source_type": "zip",
+            "path": "bundled/pbb-realtime-1.0.0.zip",
+            "sha256": "9ad22fb025bb782f33a644a350bde9ea28d5926fe859929d52e5402d860d2ceb",
+            "trusted": true,
+            "signature_status": "local-trusted"
+        },
+        {
+            "app_id": "pbb-relay",
+            "version": "1.1.0",
+            "source_type": "zip",
+            "path": "bundled/pbb-relay-1.1.0.zip",
+            "sha256": "314e452e3f9dfcfc2cac23b563ad69d0379f7e130ada332c6ce28775bb5f8f88",
+            "trusted": true,
+            "signature_status": "local-trusted"
+        },
+        {
+            "app_id": "pbb-hotline",
+            "version": "5.6.1",
+            "source_type": "zip",
+            "path": "bundled/pbb-hotline-5.6.1.zip",
+            "sha256": "3d75dbb5e0a96a342b35969f6e98ad9a9add494aa885b816d3cc92084afaacef",
+            "trusted": true,
+            "signature_status": "local-trusted"
+        }
+    ]
 }

@@ -2,6 +2,8 @@
 
 Project Bantay Bayan apps are distributed to Kit Setup as trusted ZIP bundles. This document defines the bundle identity and update metadata each app should prepare before Kit starts enforcing update protocols.
 
+For production bundle contents and dependency pruning, also follow [App Bundle Packaging Standard](app-bundle-packaging-standard.md).
+
 ## Goals
 
 - Make every app bundle uniquely identifiable.
@@ -34,6 +36,14 @@ Rules:
 - `{semver}` must match `release.json.version`.
 - Do not add suffixes like `-fixed`, `-test`, `-hotfix`, `-data-prep`, branch names, timestamps, or copies to canonical bundle filenames.
 - Experimental bundles must not be placed in Kit's trusted bundled package path.
+
+Supplemental app-owned payloads may use a more specific filename when they are not standalone apps. MapServer boundary packs use:
+
+```text
+pbb-mapserver-boundaries-province-{prov_code}.zip
+```
+
+These packs must be declared from the owning app's `packages.bundled.json` entry under `supplemental_packages`, include a SHA-256 hash, and extract only into app-owned runtime paths. The main MapServer app bundle remains `pbb-mapserver-1.0.0.zip`; province packs carry the deployment-scoped boundary data.
 
 ## Required Identity Fields
 
@@ -220,6 +230,7 @@ Before submitting a canonical bundle to Kit:
 - Confirm `release.json.build.id` is unique.
 - Confirm `release.json.build.git_commit` is accurate when available.
 - Confirm `release.json.update` is present or planned.
+- Confirm the ZIP follows [App Bundle Packaging Standard](app-bundle-packaging-standard.md), including production Composer dependencies only where applicable.
 - Regenerate internal `checksums.sha256` after all file changes.
 - Verify internal checksum scan reports no missing or bad files.
 - Update `packages.bundled.json` with the archive SHA-256.

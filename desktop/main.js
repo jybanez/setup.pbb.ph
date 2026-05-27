@@ -568,15 +568,27 @@ async function estimateDiskSpace(form = {}) {
   const selectedPackages = packages.filter((item) => {
     const appId = String(item.app_id || '');
     return selectedApps[appId] === 'local' && decisions[appId] !== 'skip';
-  }).map((item) => {
+  }).flatMap((item) => {
+    const selected = [];
     const packagePath = path.resolve(repoRoot, 'packages', String(item.path || ''));
-    const size = fs.existsSync(packagePath) ? fs.statSync(packagePath).size : 0;
-    return {
+    selected.push({
       app_id: item.app_id || '',
       version: item.version || '',
       path: packagePath,
-      archive_bytes: size
-    };
+      archive_bytes: fs.existsSync(packagePath) ? fs.statSync(packagePath).size : 0
+    });
+    const supplementalPackages = Array.isArray(item.supplemental_packages) ? item.supplemental_packages : [];
+    for (const supplementalPackage of supplementalPackages) {
+      const supplementalPath = path.resolve(repoRoot, 'packages', String(supplementalPackage.path || ''));
+      selected.push({
+        app_id: item.app_id || '',
+        version: item.version || '',
+        path: supplementalPath,
+        archive_bytes: fs.existsSync(supplementalPath) ? fs.statSync(supplementalPath).size : 0,
+        supplemental: true
+      });
+    }
+    return selected;
   });
   const archiveBytes = selectedPackages.reduce((sum, item) => sum + Number(item.archive_bytes || 0), 0);
   const targetRequiredBytes = Math.ceil((archiveBytes * 2.5) + (512 * 1024 * 1024));

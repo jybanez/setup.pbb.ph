@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.120';
+    private const VERSION = '0.1.124';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.120';
+    private const DISPLAY_VERSION = 'v1-0.1.124';
     private const SERVICE_WRAPPER = 'winsw';
     private ?string $progressFile = null;
 
@@ -1976,6 +1976,25 @@ final class KitSetupRunner
             }
         }
 
+        $supplementalPackages = $this->prepareSupplementalPackages(
+            $entry,
+            $appId,
+            $targetPath,
+            $manifestDir,
+            $dryRun,
+            $status !== 'failed' && ($dryRun || $targetPrepared),
+            $progressBase
+        );
+        foreach ($supplementalPackages as $supplementalPackage) {
+            if (($supplementalPackage['status'] ?? '') === 'failed') {
+                $status = 'failed';
+                $errors[] = (string) ($supplementalPackage['message'] ?? 'Supplemental package failed.');
+            } elseif (($supplementalPackage['status'] ?? '') === 'warning' && $status === 'success') {
+                $status = 'warning';
+                $warnings[] = (string) ($supplementalPackage['message'] ?? 'Supplemental package warning.');
+            }
+        }
+
         $this->writeProgress('package', $appId, $status === 'failed' ? 'failed' : 'complete', $progressBase + [
             'message' => $status === 'failed' ? implode(' ', $errors) : 'Package is ready.',
             'status' => $status,
@@ -2007,10 +2026,100 @@ final class KitSetupRunner
             ] : null,
             'archive_sha256' => $archiveSha256,
             'checksum' => $checksum,
+            'supplemental_packages' => $supplementalPackages,
             'warnings' => $warnings,
             'errors' => $errors,
             'checks' => $checks,
         ];
+    }
+
+    private function prepareSupplementalPackages(array $entry, string $appId, string $targetPath, string $manifestDir, bool $dryRun, bool $canInstall, array $progressBase): array
+    {
+        $supplementalEntries = $entry['supplemental_packages'] ?? [];
+        if (!is_array($supplementalEntries) || count($supplementalEntries) === 0) {
+            return [];
+        }
+
+        $results = [];
+        foreach (array_values($supplementalEntries) as $index => $supplementalEntry) {
+            if (!is_array($supplementalEntry)) {
+                continue;
+            }
+
+            $id = trim((string) ($supplementalEntry['id'] ?? ('supplemental-' . ($index + 1))));
+            $path = trim((string) ($supplementalEntry['path'] ?? ''));
+            if ($path !== '' && !$this->isAbsolutePath($path)) {
+                $path = $this->joinPath($manifestDir, $path);
+            }
+
+            $result = [
+                'id' => $id,
+                'kind' => (string) ($supplementalEntry['kind'] ?? ''),
+                'status' => 'success',
+                'path' => $path !== '' ? $this->absolutePath($path) : '',
+                'target_path' => $targetPath,
+                'dry_run' => $dryRun,
+                'archive_sha256' => null,
+                'installed' => false,
+                'message' => '',
+            ];
+
+            if (($supplementalEntry['trusted'] ?? false) !== true) {
+                $result['status'] = 'failed';
+                $result['message'] = 'Supplemental package is not marked trusted.';
+                $results[] = $result;
+                continue;
+            }
+            if ($path === '' || !is_file($path)) {
+                $result['status'] = 'failed';
+                $result['message'] = 'Supplemental package path does not exist.';
+                $results[] = $result;
+                continue;
+            }
+
+            $archiveSha256 = hash_file('sha256', $path);
+            $result['archive_sha256'] = $archiveSha256;
+            $expectedSha256 = trim((string) ($supplementalEntry['sha256'] ?? ''));
+            if ($expectedSha256 !== '' && strtolower($expectedSha256) !== strtolower((string) $archiveSha256)) {
+                $result['status'] = 'failed';
+                $result['message'] = 'Supplemental package SHA-256 does not match manifest.';
+                $results[] = $result;
+                continue;
+            }
+
+            if (!$canInstall) {
+                $result['status'] = $dryRun ? 'success' : 'warning';
+                $result['message'] = $dryRun
+                    ? 'Supplemental package installation planned.'
+                    : 'Supplemental package was not installed because the main app package was not deployed.';
+                $results[] = $result;
+                continue;
+            }
+
+            if ($dryRun) {
+                $result['message'] = 'Supplemental package installation planned.';
+                $results[] = $result;
+                continue;
+            }
+
+            try {
+                $this->writeProgress('package', $appId, 'supplemental', $progressBase + [
+                    'message' => 'Installing supplemental package: ' . $id,
+                    'percent' => 96,
+                ]);
+                $install = $this->extractSupplementalPackageArchive($path, $targetPath);
+                $result['installed'] = true;
+                $result['file_count'] = $install['file_count'];
+                $result['message'] = 'Supplemental package installed.';
+            } catch (Throwable $e) {
+                $result['status'] = 'failed';
+                $result['message'] = $e->getMessage();
+            }
+
+            $results[] = $result;
+        }
+
+        return $results;
     }
 
     private function verifyPackageSignature(array $entry, string $packagePath, string $manifestDir): array
@@ -4727,6 +4836,61 @@ POWERSHELL
         }
 
         return $stagingPath;
+    }
+
+    private function extractSupplementalPackageArchive(string $archivePath, string $targetPath): array
+    {
+        if (!class_exists('ZipArchive')) {
+            throw new RuntimeException('PHP ZipArchive extension is required for supplemental package extraction.');
+        }
+        if ($targetPath === '' || !is_dir($targetPath)) {
+            throw new RuntimeException('Supplemental package target does not exist: ' . $targetPath);
+        }
+
+        $zip = new ZipArchive();
+        $opened = $zip->open($archivePath);
+        if ($opened !== true) {
+            throw new RuntimeException('Unable to open supplemental package archive: ' . $archivePath);
+        }
+
+        $fileCount = 0;
+        try {
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $name = (string) $zip->getNameIndex($i);
+                $normalized = str_replace('\\', '/', $name);
+                if ($normalized === '' || str_starts_with($normalized, '/') || preg_match('/(^|\/)\.\.(\/|$)/', $normalized) === 1) {
+                    throw new RuntimeException('Unsafe supplemental archive path: ' . $name);
+                }
+                if (str_ends_with($normalized, '/')) {
+                    continue;
+                }
+
+                $destination = $this->joinPath($targetPath, str_replace('/', DIRECTORY_SEPARATOR, $normalized));
+                $this->ensureDirectory(dirname($destination));
+                $stream = $zip->getStream($name);
+                if (!is_resource($stream)) {
+                    throw new RuntimeException('Unable to read supplemental archive entry: ' . $name);
+                }
+                $output = fopen($destination, 'wb');
+                if (!is_resource($output)) {
+                    fclose($stream);
+                    throw new RuntimeException('Unable to create supplemental package file: ' . $destination);
+                }
+                try {
+                    stream_copy_to_stream($stream, $output);
+                } finally {
+                    fclose($output);
+                    fclose($stream);
+                }
+                $fileCount++;
+            }
+        } finally {
+            $zip->close();
+        }
+
+        return [
+            'file_count' => $fileCount,
+        ];
     }
 
     private function safePathSegment(string $value): string
