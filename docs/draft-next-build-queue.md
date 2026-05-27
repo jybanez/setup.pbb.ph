@@ -185,6 +185,12 @@ Status: living checklist for items discussed during installer testing. Do not tr
 
 ## Built / Released
 
+- [x] `0.1.120` release candidate rebuild.
+  - Embeds final Hotline bundle `pbb-hotline-5.6.1.zip` for SITREP group presets.
+  - Hotline bundle sha256: `1be24b85cd54a849d2048df57efe929483e7df3d07826ddaf44bfd9038740abd`.
+  - Hotline build id: `pbb-hotline-5.6.1-20260527-sitrep-group-presets`.
+  - Replaces superseded oversized Hotline bundle sha256 `174afb63028543d6f00d1eeb13c65229ca846b7737defbaf3575160f651e0879`.
+
 - [x] `0.1.119` release candidate rebuild.
   - Embeds refreshed Hotline bundle `pbb-hotline-5.6.1.zip`.
   - Hotline bundle sha256: `4a8c744091b2fdfc7aabd76af16910a0c7c26422b0e0745a0e6a752601b91276`.

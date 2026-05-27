@@ -8,7 +8,7 @@ The intent is not to replace each app's own installer. Each PBB app should ship 
 
 Start here:
 
-- [Release Candidate v1-0.1.119](docs/release-candidate-v1-0.1.119.md)
+- [Release Candidate v1-0.1.120](docs/release-candidate-v1-0.1.120.md)
 - [Non-Technical Install Flow](docs/non-technical-install-flow.md)
 - [Implementation Decisions](docs/implementation-decisions.md)
 - [Desktop Installer Shell](docs/desktop-installer-shell.md)
