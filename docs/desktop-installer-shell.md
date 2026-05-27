@@ -66,13 +66,7 @@ The shell does not duplicate installer logic. It calls the PHP runner actions an
 Current release-candidate build:
 
 ```text
-Project Bantay Bayan Setup 0.1.118.exe
-```
-
-SHA256:
-
-```text
-6CA2B316D242230AC76B84A00CEE7EF9971DE33BFA619F53C12EDA085BD37C8D
+Project Bantay Bayan Setup 0.1.119.exe
 ```
 
 Behavior locked for this candidate:
@@ -81,6 +75,7 @@ Behavior locked for this candidate:
 - Setup mode keeps the gate result until the operator clicks `Check Again`; Start Installation does not force a gate rerun.
 - `http://dns.pbb.ph:5380` may remain the Technitium URL, but the Windows DNS client target is resolved/probed to an IPv4 address before validation.
 - Data Prep mode hides the Startup Requirements gate and is gated only by the completed Kit Setup state.
+- v1-0.1.119 embeds the refreshed Hotline `5.6.1` same-version rebuild with build id `pbb-hotline-5.6.1-20260527-main-sitrep-cleanup`.
 
 ## Confirmation Gates
 

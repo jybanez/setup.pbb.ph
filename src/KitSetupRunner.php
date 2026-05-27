@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class KitSetupRunner
 {
-    private const VERSION = '0.1.118';
+    private const VERSION = '0.1.119';
     private const MILESTONE = 1;
-    private const DISPLAY_VERSION = 'v1-0.1.118';
+    private const DISPLAY_VERSION = 'v1-0.1.119';
     private const SERVICE_WRAPPER = 'winsw';
     private ?string $progressFile = null;
 

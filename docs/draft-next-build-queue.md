@@ -185,6 +185,12 @@ Status: living checklist for items discussed during installer testing. Do not tr
 
 ## Built / Released
 
+- [x] `0.1.119` release candidate rebuild.
+  - Embeds refreshed Hotline bundle `pbb-hotline-5.6.1.zip`.
+  - Hotline bundle sha256: `4a8c744091b2fdfc7aabd76af16910a0c7c26422b0e0745a0e6a752601b91276`.
+  - Hotline build id: `pbb-hotline-5.6.1-20260527-main-sitrep-cleanup`.
+  - Carries forward the `0.1.118` setup gate, hidden DNS IPv4 fallback, no forced gate rerun, and Data Prep gate-hide behavior.
+
 - [x] `0.1.118` release candidate.
   - Installer artifact: `out\Project Bantay Bayan Setup 0.1.118.exe`.
   - SHA256: `6CA2B316D242230AC76B84A00CEE7EF9971DE33BFA619F53C12EDA085BD37C8D`.

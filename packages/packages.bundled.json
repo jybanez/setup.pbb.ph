@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "generated_for": "Project Bantay Bayan bundled app packages",
-  "generated_at": "2026-05-25T17:26:26.4990968+08:00",
+  "generated_at": "2026-05-27T08:19:44.3274293+08:00",
   "packages": [
     {
       "app_id": "pbb-mapserver",
@@ -44,7 +44,7 @@
       "version": "5.6.1",
       "source_type": "zip",
       "path": "bundled/pbb-hotline-5.6.1.zip",
-      "sha256": "84b41fda232ee48ce58e1c20fe2ccc66714bd8de2fad430a4b7330c2e19e28f3",
+      "sha256": "4a8c744091b2fdfc7aabd76af16910a0c7c26422b0e0745a0e6a752601b91276",
       "trusted": true,
       "signature_status": "local-trusted"
     }
