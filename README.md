@@ -9,6 +9,7 @@ The intent is not to replace each app's own installer. Each PBB app should ship 
 Start here:
 
 - [Official Release v1-0.1.124](docs/release-v1-0.1.124.md)
+- [Windows Install Requirements](docs/windows-install-requirements.md)
 - [Release Candidate v1-0.1.124](docs/release-candidate-v1-0.1.124.md)
 - [Pre-Build Verification Checklist](docs/pre-build-verification-checklist.md)
 - [Non-Technical Install Flow](docs/non-technical-install-flow.md)

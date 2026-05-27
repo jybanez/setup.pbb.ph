@@ -4,6 +4,8 @@ This is the target administrator-facing setup flow for PBB Kit Setup.
 
 ## 1. Admin Inputs & Platform Check
 
+For Windows local-node installs, WampServer and Technitium DNS Server must be installed before Kit Setup starts the automated setup flow. Reference installers and the startup-gate contract are documented in [Windows Install Requirements](windows-install-requirements.md).
+
 Kit Setup first collects all administrator-owned inputs needed for an automated run. This includes platform executable paths, Hub pairing, local/remote/off app topology, install base path, shared database credentials, first administrator identity, DNS settings, firewall intent, and SSL/Apache paths. Kit Setup detects Windows/Linux, PHP, Apache, MySQL/MariaDB, OpenSSL, ffmpeg/ffprobe, and required PHP extensions. The administrator sees readiness states: ready, needs attention, or cannot continue before any mutating action runs.
 
 ## 2. Hub Pairing

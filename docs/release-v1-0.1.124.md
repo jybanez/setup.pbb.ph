@@ -34,6 +34,7 @@ The release includes:
 - Maestro baseline-schema seed-skip fix
 - MapServer small runtime bundle plus Cebu province boundary supplemental pack
 - startup requirements gate for WAMPServer and Technitium DNS before setup inputs
+- Windows requirement references for WampServer and Technitium DNS are tracked in `docs/windows-install-requirements.md`
 - Data Prep flow without the startup requirements gate
 - province-scoped release artifact naming
 

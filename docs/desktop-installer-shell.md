@@ -19,6 +19,7 @@ The shell does not duplicate installer logic. It calls the PHP runner actions an
 - Shows the Kit Setup version in the sidebar.
 - Shows a setup-only Startup Requirements gate before Admin Inputs are available.
 - Requires WAMPServer Apache/MySQL or MariaDB services and Technitium at `http://dns.<zone>:5380` before automated Setup can continue.
+- Documents the Windows prerequisite installers in [Windows Install Requirements](windows-install-requirements.md): WampServer from `https://wampserver.aviatechno.net/` and Technitium DNS Server from `https://technitium.com/dns/`.
 - Keeps the Technitium URL as a URL, while deriving an IPv4 target for the hidden Windows DNS client setting before validation/config generation.
 - Keeps the sidebar and main content scroll areas independent.
 - Shows per-stage validation and inline recovery guidance.
